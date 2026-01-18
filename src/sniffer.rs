@@ -311,10 +311,16 @@ fn detect_header(table: &crate::tum::table::Table, _dialect: &PotentialDialect) 
     checks += 1;
 
     // Check 4: First row values are shorter (headers tend to be concise)
-    let avg_first_len: f64 =
-        first_row.iter().map(|s| s.len()).sum::<usize>() as f64 / first_row.len().max(1) as f64;
-    let avg_second_len: f64 =
-        second_row.iter().map(|s| s.len()).sum::<usize>() as f64 / second_row.len().max(1) as f64;
+    let avg_first_len: f64 = first_row
+        .iter()
+        .map(std::string::String::len)
+        .sum::<usize>() as f64
+        / first_row.len().max(1) as f64;
+    let avg_second_len: f64 = second_row
+        .iter()
+        .map(std::string::String::len)
+        .sum::<usize>() as f64
+        / second_row.len().max(1) as f64;
 
     if avg_first_len <= avg_second_len {
         header_score += 0.3;

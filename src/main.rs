@@ -3,7 +3,7 @@
 use clap::Parser;
 use csv_nose::benchmark::{find_annotations, run_benchmark};
 use csv_nose::{DatePreference, Quote, SampleSize, Sniffer};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// CSV dialect sniffer using the Table Uniformity Method.
@@ -186,7 +186,7 @@ fn sniff_file(path: &PathBuf, args: &Args) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-fn print_text_output(path: &PathBuf, metadata: &csv_nose::Metadata, verbose: bool) {
+fn print_text_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) {
     println!("File: {}", path.display());
     println!("  Delimiter: {:?}", metadata.dialect.delimiter as char);
     println!(
@@ -221,7 +221,7 @@ fn print_text_output(path: &PathBuf, metadata: &csv_nose::Metadata, verbose: boo
     println!();
 }
 
-fn print_json_output(path: &PathBuf, metadata: &csv_nose::Metadata, verbose: bool) {
+fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) {
     let quote_str = match metadata.dialect.quote {
         Quote::None => "null".to_string(),
         Quote::Some(q) => format!("\"{}\"", q as char),
@@ -259,7 +259,7 @@ fn print_json_output(path: &PathBuf, metadata: &csv_nose::Metadata, verbose: boo
     println!("}}");
 }
 
-fn print_csv_output(path: &PathBuf, metadata: &csv_nose::Metadata) {
+fn print_csv_output(path: &Path, metadata: &csv_nose::Metadata) {
     let quote_str = match metadata.dialect.quote {
         Quote::None => "none".to_string(),
         Quote::Some(q) => format!("{}", q as char),

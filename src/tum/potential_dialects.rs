@@ -25,6 +25,7 @@ impl PotentialDialect {
 }
 
 /// Line terminator sequences.
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LineTerminator {
     /// Unix-style line ending (\n).
@@ -59,17 +60,18 @@ impl LineTerminator {
 
 /// Common delimiters to test (ordered by frequency in real-world data).
 /// Note: Colon is intentionally excluded as it commonly appears in time values (HH:MM:SS).
-pub const DELIMITERS: &[u8] = &[
-    b',',  // Comma (most common)
-    b';',  // Semicolon (common in European locales)
-    b'\t', // Tab (TSV files)
-    b'|',  // Pipe
-    b' ',  // Space
-    b'^',  // Caret
-    b'~',  // Tilde
-    b'#',  // Hash (rare)
-    b'&',  // Ampersand (rare)
-];
+// pub const DELIMITERS: &[u8] = &[
+//     b',',  // Comma (most common)
+//     b';',  // Semicolon (common in European locales)
+//     b'\t', // Tab (TSV files)
+//     b'|',  // Pipe
+//     b' ',  // Space
+//     b'^',  // Caret
+//     b'~',  // Tilde
+//     b'#',  // Hash (rare)car
+//     b'&',  // Ampersand (rare)
+// ];
+pub const DELIMITERS: &[u8] = b",;\t| ^~#&";
 
 /// Quote characters to test.
 pub const QUOTES: &[Quote] = &[

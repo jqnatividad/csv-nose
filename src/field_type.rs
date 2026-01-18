@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Data type detected for a CSV field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Type {
     /// Unsigned integer (non-negative whole number).
     Unsigned,
@@ -18,13 +18,8 @@ pub enum Type {
     /// Null/empty value.
     NULL,
     /// Text/string value (fallback type).
+    #[default]
     Text,
-}
-
-impl Default for Type {
-    fn default() -> Self {
-        Type::Text
-    }
 }
 
 impl fmt::Display for Type {
