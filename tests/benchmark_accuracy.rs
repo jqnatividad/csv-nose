@@ -13,7 +13,9 @@ fn get_test_data_dir() -> PathBuf {
 fn run_dataset_benchmark(dataset: &str) -> BenchmarkResult {
     let data_dir = get_test_data_dir();
     let csv_dir = data_dir.join(dataset);
-    let annotations_path = data_dir.join("annotations").join(format!("{}.txt", dataset));
+    let annotations_path = data_dir
+        .join("annotations")
+        .join(format!("{}.txt", dataset));
 
     if !csv_dir.exists() {
         panic!(
@@ -108,11 +110,7 @@ fn test_parse_pollock_annotations() {
     }
 
     if let Some(entry) = annotations.get("file_quotation_char_0x27.csv") {
-        assert_eq!(
-            entry.quote_char,
-            Some(b'\''),
-            "Should detect single quote"
-        );
+        assert_eq!(entry.quote_char, Some(b'\''), "Should detect single quote");
     }
 }
 
@@ -197,12 +195,21 @@ fn test_combined_accuracy_report() {
     println!("========================================\n");
 
     println!("POLLOCK:");
-    println!("  Delimiter accuracy: {:.1}%", pollock.delimiter_accuracy() * 100.0);
-    println!("  Quote accuracy:     {:.1}%", pollock.quote_accuracy() * 100.0);
+    println!(
+        "  Delimiter accuracy: {:.1}%",
+        pollock.delimiter_accuracy() * 100.0
+    );
+    println!(
+        "  Quote accuracy:     {:.1}%",
+        pollock.quote_accuracy() * 100.0
+    );
     println!("  F1 Score:           {:.3}", pollock.f1_score());
 
     println!("\nW3C-CSVW:");
-    println!("  Delimiter accuracy: {:.1}%", w3c.delimiter_accuracy() * 100.0);
+    println!(
+        "  Delimiter accuracy: {:.1}%",
+        w3c.delimiter_accuracy() * 100.0
+    );
     println!("  Quote accuracy:     {:.1}%", w3c.quote_accuracy() * 100.0);
     println!("  F1 Score:           {:.3}", w3c.f1_score());
 }

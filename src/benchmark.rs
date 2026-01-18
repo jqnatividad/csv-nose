@@ -173,11 +173,26 @@ impl BenchmarkResult {
     pub fn print_summary(&self) {
         println!("\n=== Summary ===\n");
         println!("Total files:        {}", self.total);
-        println!("Passed:             {} ({:.1}%)", self.passed, self.success_ratio() * 100.0);
-        println!("Failed:             {} ({:.1}%)", self.failed, self.failure_ratio() * 100.0);
-        println!("Errors:             {} ({:.1}%)", self.errors, self.error_ratio() * 100.0);
+        println!(
+            "Passed:             {} ({:.1}%)",
+            self.passed,
+            self.success_ratio() * 100.0
+        );
+        println!(
+            "Failed:             {} ({:.1}%)",
+            self.failed,
+            self.failure_ratio() * 100.0
+        );
+        println!(
+            "Errors:             {} ({:.1}%)",
+            self.errors,
+            self.error_ratio() * 100.0
+        );
         println!();
-        println!("Delimiter accuracy: {:.1}%", self.delimiter_accuracy() * 100.0);
+        println!(
+            "Delimiter accuracy: {:.1}%",
+            self.delimiter_accuracy() * 100.0
+        );
         println!("Quote accuracy:     {:.1}%", self.quote_accuracy() * 100.0);
         println!();
         println!("Precision:          {:.3}", self.precision());
@@ -311,7 +326,9 @@ pub fn run_benchmark(data_dir: &Path, annotations_path: &Path) -> io::Result<Ben
     }
 
     // Sort results by file name for consistent output
-    result.file_results.sort_by(|a, b| a.file_name.cmp(&b.file_name));
+    result
+        .file_results
+        .sort_by(|a, b| a.file_name.cmp(&b.file_name));
 
     Ok(result)
 }

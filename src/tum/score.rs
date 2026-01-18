@@ -46,7 +46,14 @@ impl DialectScore {
         let uniform = is_uniform(table);
 
         // Calculate combined gamma score (includes delimiter penalty)
-        let gamma = compute_gamma(tau_0, tau_1, type_score, pattern_score, table, dialect.delimiter);
+        let gamma = compute_gamma(
+            tau_0,
+            tau_1,
+            type_score,
+            pattern_score,
+            table,
+            dialect.delimiter,
+        );
 
         Self {
             dialect,
@@ -133,14 +140,14 @@ fn compute_gamma(
     // Penalty for uncommon delimiters
     // This helps prevent rare characters from winning due to accidental patterns
     let delimiter_penalty = match delimiter {
-        b',' | b';' | b'\t' => 1.0,   // Common delimiters - no penalty
-        b'|' => 0.98,                  // Pipe - slight penalty
-        b':' => 0.90,                  // Colon - moderate penalty (often in timestamps)
-        b' ' => 0.75,                  // Space - significant penalty (often in text)
-        b'^' | b'~' => 0.80,          // Rare delimiters
-        b'#' => 0.60,                  // Hash - often comment marker
-        b'&' => 0.60,                  // Ampersand - very rare
-        _ => 0.70,                     // Unknown - penalty
+        b',' | b';' | b'\t' => 1.0, // Common delimiters - no penalty
+        b'|' => 0.98,               // Pipe - slight penalty
+        b':' => 0.90,               // Colon - moderate penalty (often in timestamps)
+        b' ' => 0.75,               // Space - significant penalty (often in text)
+        b'^' | b'~' => 0.80,        // Rare delimiters
+        b'#' => 0.60,               // Hash - often comment marker
+        b'&' => 0.60,               // Ampersand - very rare
+        _ => 0.70,                  // Unknown - penalty
     };
 
     // Combine all factors
@@ -235,17 +242,17 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
 /// Common delimiters like comma are preferred over rare ones like space or &.
 fn delimiter_priority(delimiter: u8) -> u8 {
     match delimiter {
-        b',' => 10,  // Comma - most common, highest priority
-        b';' => 9,   // Semicolon - common in European locales
-        b'\t' => 8,  // Tab - TSV files
-        b'|' => 7,   // Pipe - common in data exports
-        b':' => 4,   // Colon - sometimes used, but also appears in timestamps
-        b'^' => 3,   // Caret - rare
-        b'~' => 3,   // Tilde - rare
-        b' ' => 2,   // Space - very rare as delimiter, often appears in text
-        b'#' => 1,   // Hash - very rare, often used for comments
-        b'&' => 1,   // Ampersand - very rare
-        _ => 0,      // Unknown delimiters - lowest priority
+        b',' => 10, // Comma - most common, highest priority
+        b';' => 9,  // Semicolon - common in European locales
+        b'\t' => 8, // Tab - TSV files
+        b'|' => 7,  // Pipe - common in data exports
+        b':' => 4,  // Colon - sometimes used, but also appears in timestamps
+        b'^' => 3,  // Caret - rare
+        b'~' => 3,  // Tilde - rare
+        b' ' => 2,  // Space - very rare as delimiter, often appears in text
+        b'#' => 1,  // Hash - very rare, often used for comments
+        b'&' => 1,  // Ampersand - very rare
+        _ => 0,     // Unknown delimiters - lowest priority
     }
 }
 
