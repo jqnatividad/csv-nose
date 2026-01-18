@@ -3,61 +3,63 @@
 //! These patterns are based on the CSVsniffer paper and extended for
 //! better real-world coverage.
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 /// Pattern for empty/null values.
-pub static EMPTY_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^$").expect("Invalid empty pattern"));
+pub static EMPTY_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^$").expect("Invalid empty pattern"));
 
 /// Pattern for NULL-like values.
-pub static NULL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static NULL_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)^(null|nil|none|na|n/a|\?|nan|-|--|\.|\.\.|#n/a|#value!|#ref!|#div/0!)$")
         .expect("Invalid null pattern")
 });
 
 /// Pattern for unsigned integers (non-negative whole numbers).
-pub static UNSIGNED_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[+]?\d{1,20}$").expect("Invalid unsigned pattern"));
+pub static UNSIGNED_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^[+]?\d{1,20}$").expect("Invalid unsigned pattern"));
 
 /// Pattern for signed integers (including negative).
-pub static SIGNED_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[-+]?\d{1,20}$").expect("Invalid signed pattern"));
+pub static SIGNED_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^[-+]?\d{1,20}$").expect("Invalid signed pattern"));
 
 /// Pattern for floating point numbers (various formats).
-pub static FLOAT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static FLOAT_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[-+]?(?:\d+\.?\d*|\d*\.?\d+)(?:[eE][-+]?\d+)?$").expect("Invalid float pattern")
 });
 
 /// Pattern for European-style floats (comma as decimal separator).
-pub static FLOAT_EURO_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[-+]?\d+,\d+$").expect("Invalid euro float pattern"));
+pub static FLOAT_EURO_PATTERN: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^[-+]?\d+,\d+$").expect("Invalid euro float pattern"));
 
 /// Pattern for numbers with thousand separators (US style: 1,234,567.89).
-pub static FLOAT_THOUSANDS_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static FLOAT_THOUSANDS_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[-+]?(?:\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)$")
         .expect("Invalid thousands pattern")
 });
 
 /// Pattern for boolean values.
-pub static BOOLEAN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static BOOLEAN_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)^(true|false|yes|no|y|n|t|f|1|0|on|off)$").expect("Invalid boolean pattern")
 });
 
 /// Pattern for ISO 8601 dates (YYYY-MM-DD).
-pub static DATE_ISO_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$").expect("Invalid ISO date pattern"));
+pub static DATE_ISO_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}$").expect("Invalid ISO date pattern")
+});
 
 /// Pattern for US-style dates (MM/DD/YYYY or MM-DD-YYYY).
-pub static DATE_US_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$").expect("Invalid US date pattern"));
+pub static DATE_US_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$").expect("Invalid US date pattern")
+});
 
 /// Pattern for European-style dates (DD.MM.YYYY).
-pub static DATE_EURO_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$").expect("Invalid Euro date pattern"));
+pub static DATE_EURO_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^\d{1,2}\.\d{1,2}\.\d{2,4}$").expect("Invalid Euro date pattern")
+});
 
 /// Pattern for ISO 8601 datetime (YYYY-MM-DDTHH:MM:SS).
-pub static DATETIME_ISO_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static DATETIME_ISO_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(
         r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}[T ]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$",
     )
@@ -65,54 +67,57 @@ pub static DATETIME_ISO_PATTERN: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Pattern for general datetime with various separators.
-pub static DATETIME_GENERAL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static DATETIME_GENERAL_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^\d{1,4}[-/\.]\d{1,2}[-/\.]\d{1,4}[T ]?\d{1,2}:\d{2}(:\d{2})?(\s*(AM|PM|am|pm))?$")
         .expect("Invalid general datetime pattern")
 });
 
 /// Pattern for time values (HH:MM:SS).
-pub static TIME_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static TIME_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^\d{1,2}:\d{2}(:\d{2})?(\.\d+)?(\s*(AM|PM|am|pm))?$")
         .expect("Invalid time pattern")
 });
 
 /// Pattern for email addresses.
-pub static EMAIL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static EMAIL_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").expect("Invalid email pattern")
 });
 
 /// Pattern for URLs.
-pub static URL_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(https?|ftp)://[^\s/$.?#].[^\s]*$").expect("Invalid URL pattern"));
+pub static URL_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^(https?|ftp)://[^\s/$.?#].[^\s]*$").expect("Invalid URL pattern")
+});
 
 /// Pattern for IPv4 addresses.
-pub static IPV4_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static IPV4_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$").expect("Invalid IPv4 pattern")
 });
 
 /// Pattern for currency values.
-pub static CURRENCY_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static CURRENCY_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[$€£¥₹]?\s*[-+]?[\d,]+\.?\d*$|^[-+]?[\d,]+\.?\d*\s*[$€£¥₹]$")
         .expect("Invalid currency pattern")
 });
 
 /// Pattern for percentage values.
-pub static PERCENTAGE_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[-+]?\d+\.?\d*\s*%$").expect("Invalid percentage pattern"));
+pub static PERCENTAGE_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^[-+]?\d+\.?\d*\s*%$").expect("Invalid percentage pattern")
+});
 
 /// Pattern for UUID values.
-pub static UUID_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static UUID_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
         .expect("Invalid UUID pattern")
 });
 
 /// Pattern for alphanumeric identifiers (common for IDs).
-pub static ALPHANUM_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_-]+$").expect("Invalid alphanumeric pattern"));
+pub static ALPHANUM_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^[A-Za-z0-9_-]+$").expect("Invalid alphanumeric pattern")
+});
 
 /// All patterns with their type categories for scoring.
 pub struct PatternCategory {
-    pub pattern: &'static Lazy<Regex>,
+    pub pattern: &'static std::sync::LazyLock<Regex>,
     #[allow(dead_code)]
     pub category: &'static str,
     pub weight: f64,
