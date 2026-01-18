@@ -1,0 +1,34 @@
+[package]
+name = "csv-nose"
+version = "0.1.0"
+edition = "2021"
+authors = ["Joel Natividad <joel@datHere.com>"]
+description = "CSV dialect sniffer using the Table Uniformity Method - a drop-in replacement for qsv-sniffer"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jqnatividad/csv-nose"
+keywords = ["csv", "sniffer", "dialect", "detection"]
+categories = ["command-line-utilities", "parsing", "text-processing"]
+
+[lib]
+name = "csv_nose"
+path = "src/lib.rs"
+
+[[bin]]
+name = "csv-nose"
+path = "src/main.rs"
+
+[dependencies]
+csv = "1.3"
+clap = { version = "4.4", features = ["derive"] }
+regex = "1.10"
+once_cell = "1.19"
+simdutf8 = "0.1"
+thiserror = "2.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
