@@ -51,6 +51,7 @@
 //! 3. Scoring based on type detection (consistent data types within columns)
 //! 4. Selecting the dialect with the highest combined score
 
+pub mod benchmark;
 mod encoding;
 mod error;
 mod field_type;

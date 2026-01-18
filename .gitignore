@@ -1,1 +1,6 @@
 /target
+
+# Test data files (copied from CSVsniffer, not included in repo)
+# See README.md "Benchmark Setup" section for instructions
+tests/data/pollock/
+tests/data/w3c-csvw/

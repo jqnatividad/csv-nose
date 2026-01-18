@@ -1,6 +1,7 @@
 //! csv-nose CLI - CSV dialect sniffer
 
 use clap::Parser;
+use csv_nose::benchmark::{find_annotations, run_benchmark};
 use csv_nose::{DatePreference, Quote, SampleSize, Sniffer};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -13,9 +14,17 @@ use std::process::ExitCode;
 #[command(name = "csv-nose")]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Input CSV file(s) to sniff
-    #[arg(required = true)]
+    /// Input CSV file(s) to sniff, or directory for benchmark mode
+    #[arg(required_unless_present = "benchmark")]
     files: Vec<PathBuf>,
+
+    /// Run benchmark mode on a directory of test files
+    #[arg(long)]
+    benchmark: bool,
+
+    /// Path to annotations file for benchmark mode (auto-detected if not specified)
+    #[arg(long)]
+    annotations: Option<PathBuf>,
 
     /// Number of records to sample (default: 100)
     #[arg(short = 'n', long, default_value = "100")]
@@ -64,6 +73,11 @@ enum OutputFormat {
 fn main() -> ExitCode {
     let args = Args::parse();
 
+    // Handle benchmark mode
+    if args.benchmark {
+        return run_benchmark_cli(&args);
+    }
+
     let mut exit_code = ExitCode::SUCCESS;
 
     for file in &args.files {
@@ -74,6 +88,53 @@ fn main() -> ExitCode {
     }
 
     exit_code
+}
+
+fn run_benchmark_cli(args: &Args) -> ExitCode {
+    if args.files.is_empty() {
+        eprintln!("Error: benchmark mode requires a directory path");
+        return ExitCode::FAILURE;
+    }
+
+    let data_dir = &args.files[0];
+
+    if !data_dir.is_dir() {
+        eprintln!("Error: {} is not a directory", data_dir.display());
+        return ExitCode::FAILURE;
+    }
+
+    // Find or use provided annotations file
+    let annotations_path = if let Some(ref path) = args.annotations {
+        path.clone()
+    } else {
+        match find_annotations(data_dir) {
+            Some(path) => path,
+            None => {
+                eprintln!(
+                    "Error: Could not find annotations file for {}",
+                    data_dir.display()
+                );
+                eprintln!("Use --annotations to specify the path to the annotations file");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
+
+    println!("Running benchmark on: {}", data_dir.display());
+    println!("Using annotations: {}", annotations_path.display());
+    println!();
+
+    match run_benchmark(data_dir, &annotations_path) {
+        Ok(result) => {
+            result.print_details();
+            result.print_summary();
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Error running benchmark: {}", e);
+            ExitCode::FAILURE
+        }
+    }
 }
 
 fn sniff_file(path: &PathBuf, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
