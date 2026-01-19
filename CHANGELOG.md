@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-01-19
+
+### Added
+
+- added CI test workflow
+- registered crate on Zenodo
+- added README.md badges
+
+### Changed
+
+- Updated CLAUDE.md with preamble detection documentation
+
+### Performance
+
+No change in performance.
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...v0.2.1
+
 ## [0.2.0] - 2025-01-19
 
 ### Added
@@ -28,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | CSV Wrangling | 90.50% | 91.06% | +0.56% |
 | CSV Wrangling CODEC | 90.14% | 90.85% | +0.71% |
 | CSV Wrangling MESSY | 90.48% | 89.68% | -0.80% |
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...v0.2.0
 
 ## [0.1.0] - 2025-01-18
 
@@ -58,6 +78,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ~94% accuracy on W3C-CSVW dataset
 - ~91% accuracy on CSV Wrangling dataset
 
-[Unreleased]: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jqnatividad/csv-nose/releases/tag/v0.1.0
