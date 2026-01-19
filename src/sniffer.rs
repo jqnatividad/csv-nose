@@ -121,8 +121,7 @@ impl Sniffer {
         let data = skip_bom(data);
 
         // Skip comment/preamble lines (lines starting with #)
-        let (preamble_rows, data) = skip_preamble(data);
-        let _ = preamble_rows; // Will be used for metadata in future
+        let (comment_preamble_rows, data) = skip_preamble(data);
 
         // Detect line terminator first to reduce search space
         let line_terminator = detect_line_terminator(data);
@@ -157,8 +156,21 @@ impl Sniffer {
         let best = find_best_dialect(&scores)
             .ok_or_else(|| SnifferError::NoDialectDetected("No valid dialect found".to_string()))?;
 
+        // Detect structural preamble (rows with inconsistent field counts)
+        let max_rows = match self.sample_size {
+            SampleSize::Records(n) => n,
+            SampleSize::Bytes(_) | SampleSize::All => 0,
+        };
+        let table_for_preamble = parse_table(data, &best.dialect, max_rows);
+        let structural_preamble = detect_structural_preamble(&table_for_preamble);
+
+        // Total preamble = comment rows + structural rows
+        let total_preamble_rows = comment_preamble_rows + structural_preamble;
+
         // Build metadata from the best dialect
-        self.build_metadata(data, best, is_utf8)
+        // Pass structural_preamble for table row indexing (since comment rows are already skipped from data)
+        // Pass total_preamble_rows for Header metadata (to report true preamble count in original file)
+        self.build_metadata(data, best, is_utf8, structural_preamble, total_preamble_rows)
     }
 
     /// Read a sample of data from the reader based on sample_size settings.
@@ -203,7 +215,18 @@ impl Sniffer {
     }
 
     /// Build Metadata from the best scoring dialect.
-    fn build_metadata(&self, data: &[u8], score: &DialectScore, is_utf8: bool) -> Result<Metadata> {
+    ///
+    /// # Arguments
+    /// * `structural_preamble` - Number of structural preamble rows in the table (for row indexing)
+    /// * `total_preamble_rows` - Total preamble rows including comments (for Header metadata)
+    fn build_metadata(
+        &self,
+        data: &[u8],
+        score: &DialectScore,
+        is_utf8: bool,
+        structural_preamble: usize,
+        total_preamble_rows: usize,
+    ) -> Result<Metadata> {
         // Parse the table with the best dialect
         let max_rows = match self.sample_size {
             SampleSize::Records(n) => n,
@@ -216,12 +239,23 @@ impl Sniffer {
             return Err(SnifferError::EmptyData);
         }
 
-        // Detect header
-        let header = detect_header(&table, &score.dialect);
+        // Create a view of the table without structural preamble
+        // (comment preamble rows are already stripped from data)
+        let effective_table = if structural_preamble > 0 && table.rows.len() > structural_preamble {
+            let mut et = crate::tum::table::Table::new();
+            et.rows = table.rows[structural_preamble..].to_vec();
+            et.field_counts = table.field_counts[structural_preamble..].to_vec();
+            et
+        } else {
+            table.clone()
+        };
 
-        // Get field names
-        let fields = if header.has_header_row && !table.rows.is_empty() {
-            table.rows[0].clone()
+        // Detect header on the effective table (pass total_preamble_rows for Header metadata)
+        let header = detect_header(&effective_table, &score.dialect, total_preamble_rows);
+
+        // Get field names from the effective table (first row after structural preamble)
+        let fields = if header.has_header_row && !effective_table.rows.is_empty() {
+            effective_table.rows[0].clone()
         } else {
             // Generate field names
             (0..score.num_fields)
@@ -230,13 +264,13 @@ impl Sniffer {
         };
 
         // Skip header row for type inference if present
-        let data_table = if header.has_header_row && table.rows.len() > 1 {
+        let data_table = if header.has_header_row && effective_table.rows.len() > 1 {
             let mut dt = crate::tum::table::Table::new();
-            dt.rows = table.rows[1..].to_vec();
-            dt.field_counts = table.field_counts[1..].to_vec();
+            dt.rows = effective_table.rows[1..].to_vec();
+            dt.field_counts = effective_table.field_counts[1..].to_vec();
             dt
         } else {
-            table.clone()
+            effective_table.clone()
         };
 
         // Infer types for each column
@@ -264,15 +298,19 @@ impl Sniffer {
     }
 }
 
-/// Detect if the first row is likely a header row.
-fn detect_header(table: &crate::tum::table::Table, _dialect: &PotentialDialect) -> Header {
+/// Detect if the first row (after preamble) is likely a header row.
+fn detect_header(
+    table: &crate::tum::table::Table,
+    _dialect: &PotentialDialect,
+    preamble_rows: usize,
+) -> Header {
     if table.rows.is_empty() {
-        return Header::new(false, 0);
+        return Header::new(false, preamble_rows);
     }
 
     if table.rows.len() < 2 {
         // Can't determine header with only one row
-        return Header::new(false, 0);
+        return Header::new(false, preamble_rows);
     }
 
     let first_row = &table.rows[0];
@@ -341,7 +379,7 @@ fn detect_header(table: &crate::tum::table::Table, _dialect: &PotentialDialect) 
     // Threshold for header detection
     let has_header = (header_score / checks as f64) > 0.4;
 
-    Header::new(has_header, 0)
+    Header::new(has_header, preamble_rows)
 }
 
 /// Calculate average record length.
@@ -392,6 +430,33 @@ fn skip_preamble(data: &[u8]) -> (usize, &[u8]) {
     }
 
     (preamble_rows, &data[offset..])
+}
+
+/// Detect structural preamble rows using field count consistency analysis.
+///
+/// Identifies rows at the start that don't match the predominant field count
+/// pattern (metadata rows, empty rows, title rows with different structure).
+fn detect_structural_preamble(table: &crate::tum::table::Table) -> usize {
+    if table.field_counts.len() < 3 {
+        return 0;
+    }
+
+    let modal_count = table.modal_field_count();
+
+    // Find first row where remaining data is 80%+ consistent with modal field count
+    for (i, &field_count) in table.field_counts.iter().enumerate() {
+        if field_count == modal_count {
+            let remaining = &table.field_counts[i..];
+            let matching = remaining.iter().filter(|&&fc| fc == modal_count).count();
+            let consistency = matching as f64 / remaining.len() as f64;
+
+            if consistency >= 0.8 {
+                return i;
+            }
+        }
+    }
+
+    0
 }
 
 #[cfg(test)]
@@ -508,5 +573,75 @@ mod tests {
         assert_eq!(metadata.dialect.delimiter, b',');
         assert!(metadata.dialect.header.has_header_row);
         assert_eq!(metadata.num_fields, 3);
+    }
+
+    #[test]
+    fn test_comment_preamble_propagated() {
+        let data = b"# Comment 1\n# Comment 2\nname,age\nAlice,30\nBob,25\n";
+        let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+        assert_eq!(metadata.dialect.header.num_preamble_rows, 2);
+        assert!(metadata.dialect.header.has_header_row);
+        assert_eq!(metadata.fields, vec!["name", "age"]);
+    }
+
+    #[test]
+    fn test_structural_preamble_detection() {
+        // TITLE row has 1 field, SUBTITLE has 2 fields, data has 5 fields
+        let data = b"TITLE\nSUB,TITLE\nA,B,C,D,E\n1,2,3,4,5\n2,3,4,5,6\n3,4,5,6,7\n";
+        let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+        assert_eq!(metadata.dialect.header.num_preamble_rows, 2);
+        assert!(metadata.dialect.header.has_header_row);
+        assert_eq!(metadata.fields, vec!["A", "B", "C", "D", "E"]);
+    }
+
+    #[test]
+    fn test_mixed_preamble_detection() {
+        // Both comment preamble and structural preamble
+        // METADATA has 1 field, data has 3 fields
+        let data = b"# File header\nMETADATA\nname,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,CHI\n";
+        let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+        // 1 comment + 1 structural = 2 total
+        assert_eq!(metadata.dialect.header.num_preamble_rows, 2);
+        assert!(metadata.dialect.header.has_header_row);
+        assert_eq!(metadata.fields, vec!["name", "age", "city"]);
+    }
+
+    #[test]
+    fn test_no_preamble() {
+        let data = b"a,b,c\n1,2,3\n4,5,6\n";
+        let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+        assert_eq!(metadata.dialect.header.num_preamble_rows, 0);
+    }
+
+    #[test]
+    fn test_detect_structural_preamble_function() {
+        use crate::tum::table::Table;
+
+        // Table with 2 preamble rows (different field counts)
+        let mut table = Table::new();
+        table.rows = vec![
+            vec!["TITLE".to_string()],
+            vec!["".to_string(), "".to_string()],
+            vec!["A".to_string(), "B".to_string(), "C".to_string()],
+            vec!["1".to_string(), "2".to_string(), "3".to_string()],
+            vec!["4".to_string(), "5".to_string(), "6".to_string()],
+        ];
+        table.field_counts = vec![1, 2, 3, 3, 3];
+        assert_eq!(detect_structural_preamble(&table), 2);
+
+        // Table with no preamble (uniform field counts)
+        let mut table = Table::new();
+        table.rows = vec![
+            vec!["A".to_string(), "B".to_string(), "C".to_string()],
+            vec!["1".to_string(), "2".to_string(), "3".to_string()],
+        ];
+        table.field_counts = vec![3, 3];
+        assert_eq!(detect_structural_preamble(&table), 0);
+
+        // Table too small to determine preamble
+        let mut table = Table::new();
+        table.rows = vec![vec!["A".to_string()]];
+        table.field_counts = vec![1];
+        assert_eq!(detect_structural_preamble(&table), 0);
     }
 }
