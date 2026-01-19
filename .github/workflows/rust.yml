@@ -18,5 +18,12 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
+    - name: Copy tests data
+      run:
+        git clone https://github.com/ws-garcia/CSVsniffer.git /tmp/CSVsniffer
+        mkdir -p ../test_data
+        cp -r /tmp/CSVsniffer/CSV/* ../test_data/pollock/
+        cp -r /tmp/CSVsniffer/W3C-CSVW/* ../test_data/w3c_csvw/
+        cp -r /tmp/CSVsniffer/CSV_Wrangling/data/github/Curated\ files/* ../test_data/csv_wrangling/
     - name: Run tests
       run: cargo test --verbose
