@@ -47,7 +47,7 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
 
 ### Core Algorithm Flow
 
-1. **`Sniffer`** (`src/sniffer.rs`) - Entry point. Reads sample data, generates potential dialects, scores them, returns `Metadata`
+1. **`Sniffer`** (`src/sniffer.rs`) - Entry point. Reads sample data, detects preamble, generates potential dialects, scores them, returns `Metadata`
 
 2. **TUM Pipeline** (`src/tum/`):
    - `potential_dialects.rs` - Generates dialect candidates (delimiter × quote × line terminator combinations)
@@ -60,6 +60,7 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
 3. **Output Types** (`src/metadata.rs`):
    - `Metadata` - Full sniff result (dialect, fields, types)
    - `Dialect` - Delimiter, quote char, header info, flexibility
+   - `Header` - Has header row flag and preamble row count
    - `Quote` - Quote character enum (`None` or `Some(u8)`)
 
 4. **Benchmark Module** (`src/benchmark.rs`) - CLI only, not part of library:
@@ -75,6 +76,7 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
 - **Delimiter preference**: When scores are close (within 10%), prefer common delimiters (`,` > `;` > `\t` > `|`) over rare ones (`#`, `&`, space)
 - **Quote preference**: When scores are close, prefer `"` over `'` over `None`
 - **Header detection**: Heuristic-based (type differences between first row and data, uniqueness, length)
+- **Preamble detection**: Two-phase detection - first skips comment lines (`#`), then detects structural preambles (rows with inconsistent field counts). Total count stored in `Header.num_preamble_rows`
 - **Sampling**: Configurable via `SampleSize::Records(n)`, `SampleSize::Bytes(n)`, or `SampleSize::All`
 
 ### Test Data
