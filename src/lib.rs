@@ -54,7 +54,7 @@
 mod encoding;
 mod error;
 mod field_type;
-mod metadata;
+pub mod metadata;
 mod sample;
 mod sniffer;
 mod tum;
