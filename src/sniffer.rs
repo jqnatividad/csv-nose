@@ -175,7 +175,7 @@ impl Sniffer {
                 // If we need more data, keep reading
                 if bytes_read == estimated_size {
                     // Count newlines to see if we have enough records
-                    let newlines = buffer.iter().filter(|&&b| b == b'\n').count();
+                    let newlines = bytecount::count(&buffer, b'\n');
                     if newlines < n {
                         // Read more data
                         let additional = (n - newlines) * 2048;
