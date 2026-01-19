@@ -71,7 +71,7 @@ impl LineTerminator {
 //     b'#',  // Hash (rare)car
 //     b'&',  // Ampersand (rare)
 // ];
-pub const DELIMITERS: &[u8] = b",;\t| ^~#&";
+pub const DELIMITERS: &[u8] = b",;\t| ^~#&\xa7/";
 
 /// Quote characters to test.
 pub const QUOTES: &[Quote] = &[
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_generate_potential_dialects() {
         let dialects = generate_potential_dialects();
-        assert_eq!(dialects.len(), 81); // 9 * 3 * 3
+        assert_eq!(dialects.len(), 99); // 11 * 3 * 3
     }
 
     #[test]

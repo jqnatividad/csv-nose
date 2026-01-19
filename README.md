@@ -4,7 +4,7 @@ A Rust implementation of the [Table Uniformity Method](https://github.com/ws-gar
 
 ## Background
 
-This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by W. García. The Table Uniformity Method achieves ~93% accuracy on real-world messy CSV files by:
+This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by W. García. The Table Uniformity Method achieves ~94% accuracy on real-world messy CSV files by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
@@ -77,17 +77,25 @@ The table below shows the dialect detection success ratio. Accuracy is measured 
 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK  | **95.92%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
-| W3C-CSVW | **93.12%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| POLLOCK  | **95.95%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
+| W3C-CSVW | **95.02%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| CSV Wrangling | **90.50%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
+| CSV Wrangling CODEC | **90.14%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
+| CSV Wrangling MESSY | **90.48%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
 
 ### Failure Ratio
 
 The table below shows the failure ratio (errors during dialect detection) for each tool.
 
+> **Note:** "Errors" are files that caused crashes or exceptions during processing (e.g., encoding issues, malformed data). This is distinct from "failures" where a file was successfully processed but the wrong dialect was detected. A 0% error rate means all files were processed without crashes, even if some detections were incorrect.
+
 | Data set             | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------------------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK [148 files]  | **0.68%**  | 0.00%              | 2.03%        | 2.03%       | 7.43%         | 2.03%              |
-| W3C-CSVW [221 files] | **1.36%**  | 0.91%              | 1.81%        | 2.26%       | 41.18%        | 1.81%              |
+| POLLOCK [148 files]  | **0.00%**  | 0.00%              | 2.03%        | 2.03%       | 7.43%         | 2.03%              |
+| W3C-CSVW [221 files] | **0.00%**  | 0.91%              | 1.81%        | 2.26%       | 41.18%        | 1.81%              |
+| CSV Wrangling [179 files] | **0.00%** | 0.00%         | 0.56%        | 0.56%       | 39.66%        | 0.00%              |
+| CSV Wrangling CODEC [142 files] | **0.00%** | 0.00%   | 0.00%        | 0.00%       | 38.03%        | 0.00%              |
+| CSV Wrangling MESSY [126 files] | **0.00%** | 0.79%   | 0.79%        | 0.79%       | 42.06%        | 0.79%              |
 
 ### F1 Score
 
@@ -95,8 +103,11 @@ The F1 score is the harmonic mean of precision and recall, providing a balanced 
 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK  | **0.953**  | 0.976              | 0.972        | 0.965       | 0.943         | 0.904              |
-| W3C-CSVW | **0.919**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
+| POLLOCK  | **0.959**  | 0.976              | 0.972        | 0.965       | 0.943         | 0.904              |
+| W3C-CSVW | **0.950**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
+| CSV Wrangling | **0.905** | 0.950             | 0.945        | 0.935       | 0.724         | 0.956              |
+| CSV Wrangling CODEC | **0.901** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
+| CSV Wrangling MESSY | **0.905** | 0.943       | 0.943        | 0.943       | 0.705         | 0.956              |
 
 ### Component Accuracy
 
@@ -104,8 +115,11 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 
 | Data set | Delimiter Accuracy | Quote Accuracy |
 |:---------|:-------------------|:---------------|
-| POLLOCK  | 97.28%             | 97.96%         |
-| W3C-CSVW | 99.08%             | 93.58%         |
+| POLLOCK  | 97.30%             | 98.00%         |
+| W3C-CSVW | 99.55%             | 95.48%         |
+| CSV Wrangling | 93.30%         | 96.09%         |
+| CSV Wrangling CODEC | 92.96%   | 95.77%         |
+| CSV Wrangling MESSY | 92.86%   | 96.83%         |
 
 ### Benchmark Setup
 
@@ -118,6 +132,7 @@ git clone https://github.com/ws-garcia/CSVsniffer.git /path/to/CSVsniffer
 # Copy test files to csv-nose
 cp -r /path/to/CSVsniffer/CSV/* tests/data/pollock/
 cp -r /path/to/CSVsniffer/W3C-CSVW/* tests/data/w3c-csvw/
+cp -r "/path/to/CSVsniffer/CSV_Wrangling/data/github/Curated files/"* tests/data/csv-wrangling/
 ```
 
 ### Running Benchmarks
@@ -130,6 +145,15 @@ cargo run --release -- --benchmark tests/data/pollock
 
 # Run benchmark on W3C-CSVW dataset
 cargo run --release -- --benchmark tests/data/w3c-csvw
+
+# Run benchmark on CSV Wrangling dataset (all 179 files)
+cargo run --release -- --benchmark tests/data/csv-wrangling
+
+# Run benchmark on CSV Wrangling filtered CODEC (142 files)
+cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/data/annotations/csv-wrangling-codec.txt
+
+# Run benchmark on CSV Wrangling MESSY (126 non-normal files)
+cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/data/annotations/csv-wrangling-messy.txt
 
 # Run integration tests with detailed output
 cargo test --test benchmark_accuracy -- --nocapture

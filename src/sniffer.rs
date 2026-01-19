@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use crate::encoding::{detect_encoding, skip_bom};
+use crate::encoding::{detect_and_transcode, detect_encoding, skip_bom};
 use crate::error::{Result, SnifferError};
 use crate::field_type::Type;
 use crate::metadata::{Dialect, Header, Metadata, Quote};
@@ -109,9 +109,20 @@ impl Sniffer {
             return Err(SnifferError::EmptyData);
         }
 
-        // Detect encoding
+        // Detect encoding and transcode to UTF-8 if necessary
+        let (transcoded_data, was_transcoded) = detect_and_transcode(data);
+        let data = &transcoded_data[..];
+
+        // Detect encoding info (for metadata)
         let encoding_info = detect_encoding(data);
+        let is_utf8 = !was_transcoded || encoding_info.is_utf8;
+
+        // Skip BOM
         let data = skip_bom(data);
+
+        // Skip comment/preamble lines (lines starting with #)
+        let (preamble_rows, data) = skip_preamble(data);
+        let _ = preamble_rows; // Will be used for metadata in future
 
         // Detect line terminator first to reduce search space
         let line_terminator = detect_line_terminator(data);
@@ -147,7 +158,7 @@ impl Sniffer {
             .ok_or_else(|| SnifferError::NoDialectDetected("No valid dialect found".to_string()))?;
 
         // Build metadata from the best dialect
-        self.build_metadata(data, best, encoding_info.is_utf8)
+        self.build_metadata(data, best, is_utf8)
     }
 
     /// Read a sample of data from the reader based on sample_size settings.
@@ -341,6 +352,48 @@ fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
     data.len() / num_rows
 }
 
+/// Skip preamble/comment lines at the start of data.
+///
+/// Detects lines starting with '#' at the beginning of the file and returns
+/// the number of preamble rows and a slice starting after the preamble.
+fn skip_preamble(data: &[u8]) -> (usize, &[u8]) {
+    let mut preamble_rows = 0;
+    let mut offset = 0;
+
+    while offset < data.len() {
+        // Skip leading whitespace on the line
+        let mut line_start = offset;
+        while line_start < data.len() && (data[line_start] == b' ' || data[line_start] == b'\t') {
+            line_start += 1;
+        }
+
+        // Check if line starts with #
+        if line_start < data.len() && data[line_start] == b'#' {
+            // Find end of line
+            let mut line_end = line_start;
+            while line_end < data.len() && data[line_end] != b'\n' && data[line_end] != b'\r' {
+                line_end += 1;
+            }
+
+            // Skip line terminator
+            if line_end < data.len() && data[line_end] == b'\r' {
+                line_end += 1;
+            }
+            if line_end < data.len() && data[line_end] == b'\n' {
+                line_end += 1;
+            }
+
+            preamble_rows += 1;
+            offset = line_end;
+        } else {
+            // Not a comment line, stop
+            break;
+        }
+    }
+
+    (preamble_rows, &data[offset..])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,5 +475,38 @@ mod tests {
 
         let result = sniffer.sniff_bytes(data);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_skip_preamble() {
+        // Test with comment lines
+        let data = b"# This is a comment\n# Another comment\nname,age\nAlice,30\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 2);
+        assert_eq!(remaining, b"name,age\nAlice,30\n");
+
+        // Test without comment lines
+        let data = b"name,age\nAlice,30\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 0);
+        assert_eq!(remaining, b"name,age\nAlice,30\n");
+
+        // Test with whitespace before #
+        let data = b"  # Indented comment\nname,age\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 1);
+        assert_eq!(remaining, b"name,age\n");
+    }
+
+    #[test]
+    fn test_sniff_with_preamble() {
+        let data = b"# LimeSurvey export\n# Generated 2024-01-01\nname,age,city\nAlice,30,NYC\nBob,25,LA\n";
+        let sniffer = Sniffer::new();
+
+        let metadata = sniffer.sniff_bytes(data).unwrap();
+
+        assert_eq!(metadata.dialect.delimiter, b',');
+        assert!(metadata.dialect.header.has_header_row);
+        assert_eq!(metadata.num_fields, 3);
     }
 }

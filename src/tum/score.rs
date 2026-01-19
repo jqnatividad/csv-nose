@@ -137,6 +137,16 @@ fn compute_gamma(
         1.0
     };
 
+    // Penalty for very small samples (less reliable detection)
+    let num_rows = table.num_rows();
+    let small_sample_penalty = if num_rows < 3 {
+        0.70 // Very small - high unreliability
+    } else if num_rows < 5 {
+        0.85 // Small - moderate unreliability
+    } else {
+        1.0
+    };
+
     // Penalty for uncommon delimiters
     // This helps prevent rare characters from winning due to accidental patterns
     let delimiter_penalty = match delimiter {
@@ -147,6 +157,8 @@ fn compute_gamma(
         b'^' | b'~' => 0.80,        // Rare delimiters
         b'#' => 0.60,               // Hash - often comment marker
         b'&' => 0.60,               // Ampersand - very rare
+        0xA7 => 0.70,               // Section sign (§) - rare delimiter
+        b'/' => 0.65,               // Forward slash - rare, often in paths/dates
         _ => 0.70,                  // Unknown - penalty
     };
 
@@ -154,7 +166,7 @@ fn compute_gamma(
     let raw_score =
         uniformity_score * 0.5 + type_contribution + pattern_contribution + row_bonus + field_bonus;
 
-    raw_score * single_field_penalty * high_field_penalty * delimiter_penalty
+    raw_score * single_field_penalty * high_field_penalty * delimiter_penalty * small_sample_penalty
 }
 
 /// Score a dialect against the data.
@@ -167,7 +179,80 @@ pub fn score_dialect(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -
         return DialectScore::zero(dialect.clone());
     }
 
-    DialectScore::new(dialect.clone(), &table)
+    let mut score = DialectScore::new(dialect.clone(), &table);
+
+    // Apply quote evidence scoring
+    let quote_multiplier = quote_evidence_score(data, dialect);
+    score.gamma *= quote_multiplier;
+
+    score
+}
+
+/// Calculate a score multiplier based on quote character evidence in the data.
+///
+/// This function examines the actual presence of quote characters in the data
+/// to boost dialects where the quote char is genuinely used and penalize
+/// Quote::None when quotes are present.
+///
+/// The scoring is conservative to avoid false positives from apostrophes
+/// in text content (e.g., "John's" contains a single quote but isn't quoted).
+fn quote_evidence_score(data: &[u8], dialect: &PotentialDialect) -> f64 {
+    use crate::metadata::Quote;
+
+    // Count occurrences of each quote type
+    let double_quote_count = bytecount::count(data, b'"');
+    let single_quote_count = bytecount::count(data, b'\'');
+
+    // Only apply quote evidence when there's a clear signal
+    // A single quote appearing at the start of a line after a delimiter is more
+    // indicative of quoting than random apostrophes in text
+    let data_len = data.len();
+    if data_len == 0 {
+        return 1.0;
+    }
+
+    // Calculate density (quotes per 1000 bytes) - higher density suggests quoting
+    let double_density = (double_quote_count * 1000) / data_len;
+    let single_density = (single_quote_count * 1000) / data_len;
+
+    // Threshold: need at least ~0.5% quote density to consider it significant
+    // This filters out incidental apostrophes in text
+    let min_density_threshold = 5; // 0.5% = 5 per 1000
+
+    match dialect.quote {
+        Quote::Some(b'"') => {
+            if double_density >= min_density_threshold {
+                // Double quotes have significant density - slight boost
+                1.03
+            } else {
+                // Neutral - rely on other scoring factors
+                1.0
+            }
+        }
+        Quote::Some(b'\'') => {
+            // Single quotes are tricky because apostrophes are common in text
+            // Only boost if single quotes dominate AND double quotes are absent
+            if single_density >= min_density_threshold * 2 && double_density < min_density_threshold
+            {
+                // Strong evidence of single-quote usage
+                1.05
+            } else if double_density >= min_density_threshold {
+                // Double quotes present but testing single - penalty
+                0.95
+            } else {
+                1.0
+            }
+        }
+        Quote::None => {
+            // Only penalize Quote::None when there's strong quoting evidence
+            if double_density >= min_density_threshold {
+                0.90
+            } else {
+                1.0
+            }
+        }
+        Quote::Some(_) => 1.0, // Other quote chars - neutral
+    }
 }
 
 /// Find the best scoring dialect from a list.
@@ -249,6 +334,8 @@ fn delimiter_priority(delimiter: u8) -> u8 {
         b':' => 4,  // Colon - sometimes used, but also appears in timestamps
         b'^' => 3,  // Caret - rare
         b'~' => 3,  // Tilde - rare
+        0xA7 => 2,  // Section sign (§) - rare
+        b'/' => 2,  // Forward slash - rare
         b' ' => 2,  // Space - very rare as delimiter, often appears in text
         b'#' => 1,  // Hash - very rare, often used for comments
         b'&' => 1,  // Ampersand - very rare

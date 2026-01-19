@@ -1,5 +1,6 @@
-//! UTF-8 encoding detection using simdutf8.
+//! Encoding detection and transcoding using chardetng and encoding_rs.
 
+use chardetng::EncodingDetector;
 use simdutf8::basic::from_utf8;
 
 /// Check if the given bytes are valid UTF-8.
@@ -55,6 +56,62 @@ impl EncodingInfo {
     }
 }
 
+/// Detect the encoding of data and transcode to UTF-8 if necessary.
+///
+/// Uses chardetng for robust encoding detection supporting:
+/// - Windows-1251 (Cyrillic)
+/// - Windows-1250 (Central European)
+/// - ISO-8859 variants
+/// - GB2312/GBK (Chinese)
+/// - UTF-16 LE/BE
+/// - And many more
+///
+/// Returns (transcoded_data, was_transcoded). If was_transcoded is false,
+/// the original data is returned as-is (it was already valid UTF-8).
+pub fn detect_and_transcode(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, bool) {
+    // Check for UTF-16 BOM first (chardetng doesn't handle these well)
+    if data.len() >= 2 {
+        // UTF-16 LE BOM: FF FE
+        if data[0] == 0xFF && data[1] == 0xFE {
+            let (decoded, _, _) = encoding_rs::UTF_16LE.decode(data);
+            return (
+                std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
+                true,
+            );
+        }
+        // UTF-16 BE BOM: FE FF
+        if data[0] == 0xFE && data[1] == 0xFF {
+            let (decoded, _, _) = encoding_rs::UTF_16BE.decode(data);
+            return (
+                std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
+                true,
+            );
+        }
+    }
+
+    // Check if already valid UTF-8
+    if is_utf8(data) {
+        return (std::borrow::Cow::Borrowed(data), false);
+    }
+
+    // Use chardetng to detect encoding
+    let mut detector = EncodingDetector::new();
+    detector.feed(data, true);
+    let encoding = detector.guess(None, true);
+
+    // If detected as UTF-8, return as-is (might have some invalid bytes)
+    if encoding == encoding_rs::UTF_8 {
+        return (std::borrow::Cow::Borrowed(data), false);
+    }
+
+    // Transcode to UTF-8
+    let (decoded, _, _) = encoding.decode(data);
+    (
+        std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
+        true,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,5 +152,36 @@ mod tests {
         let info = detect_encoding(&with_bom);
         assert!(info.is_utf8);
         assert!(info.has_bom);
+    }
+
+    #[test]
+    fn test_detect_and_transcode_utf8() {
+        // Valid UTF-8 should not be transcoded
+        let data = b"Hello, World!";
+        let (result, was_transcoded) = detect_and_transcode(data);
+        assert!(!was_transcoded);
+        assert_eq!(&result[..], data);
+    }
+
+    #[test]
+    fn test_detect_and_transcode_utf16_le() {
+        // UTF-16 LE with BOM: "Hi"
+        let data: &[u8] = &[0xFF, 0xFE, b'H', 0x00, b'i', 0x00];
+        let (result, was_transcoded) = detect_and_transcode(data);
+        assert!(was_transcoded);
+        // Result should be UTF-8 (without BOM marker in content)
+        assert!(is_utf8(&result));
+    }
+
+    #[test]
+    fn test_detect_and_transcode_windows1251() {
+        // Windows-1251 encoded Cyrillic text: "Привет" (Hello in Russian)
+        // П=0xCF, р=0xF0, и=0xE8, в=0xE2, е=0xE5, т=0xF2
+        let data: &[u8] = &[0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2];
+        let (result, was_transcoded) = detect_and_transcode(data);
+        // Should be transcoded since it's not valid UTF-8
+        assert!(was_transcoded);
+        // Result should be valid UTF-8
+        assert!(is_utf8(&result));
     }
 }
