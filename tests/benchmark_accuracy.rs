@@ -58,18 +58,27 @@ fn parse_total_from_output(output: &str) -> Option<usize> {
 
 /// Run benchmark on a dataset and return (total_files, accuracy_pct, stdout)
 fn run_dataset_benchmark(dataset: &str) -> (usize, f64, String) {
+    run_benchmark_with_annotations(dataset, dataset)
+}
+
+/// Run benchmark with separate data directory and annotations file.
+/// This allows multiple benchmarks to share the same data directory with different annotation files.
+fn run_benchmark_with_annotations(
+    data_dir_name: &str,
+    annotations_name: &str,
+) -> (usize, f64, String) {
     let data_dir = get_test_data_dir();
-    let csv_dir = data_dir.join(dataset);
+    let csv_dir = data_dir.join(data_dir_name);
     let annotations_path = data_dir
         .join("annotations")
-        .join(format!("{}.txt", dataset));
+        .join(format!("{}.txt", annotations_name));
 
     if !csv_dir.exists() {
         panic!(
             "Test data directory not found: {}. \
              Please copy CSVsniffer test files to tests/data/{}",
             csv_dir.display(),
-            dataset
+            data_dir_name
         );
     }
 
@@ -78,7 +87,7 @@ fn run_dataset_benchmark(dataset: &str) -> (usize, f64, String) {
             "Annotations file not found: {}. \
              Please copy annotations to tests/data/annotations/{}.txt",
             annotations_path.display(),
-            dataset
+            annotations_name
         );
     }
 
@@ -147,35 +156,97 @@ fn test_w3c_csvw_accuracy() {
 }
 
 #[test]
+fn test_csv_wrangling_accuracy() {
+    let (total, accuracy, stdout) = run_dataset_benchmark("csv-wrangling");
+
+    println!("\n========== CSV Wrangling Dataset ==========");
+    println!("{}", stdout);
+
+    // Basic sanity checks
+    assert!(total > 0, "Should have test files");
+    println!("\nCSV Wrangling Accuracy: {:.1}%", accuracy);
+}
+
+#[test]
+fn test_csv_wrangling_codec_accuracy() {
+    // Uses csv-wrangling data dir but csv-wrangling-codec annotations
+    let (total, accuracy, stdout) =
+        run_benchmark_with_annotations("csv-wrangling", "csv-wrangling-codec");
+
+    println!("\n========== CSV Wrangling filtered CODEC ==========");
+    println!("{}", stdout);
+
+    // Basic sanity checks
+    assert!(total > 0, "Should have test files");
+    println!("\nCSV Wrangling CODEC Accuracy: {:.1}%", accuracy);
+}
+
+#[test]
+fn test_csv_wrangling_messy_accuracy() {
+    // Uses csv-wrangling data dir but csv-wrangling-messy annotations (only non-normal files)
+    let (total, accuracy, stdout) =
+        run_benchmark_with_annotations("csv-wrangling", "csv-wrangling-messy");
+
+    println!("\n========== CSV Wrangling MESSY ==========");
+    println!("{}", stdout);
+
+    // Basic sanity checks
+    assert!(total > 0, "Should have test files");
+    println!("\nCSV Wrangling MESSY Accuracy: {:.1}%", accuracy);
+}
+
+#[test]
 fn test_combined_accuracy_report() {
     let (pollock_total, pollock_accuracy, _) = run_dataset_benchmark("pollock");
     let (w3c_total, w3c_accuracy, _) = run_dataset_benchmark("w3c-csvw");
+    let (wrangling_total, wrangling_accuracy, _) = run_dataset_benchmark("csv-wrangling");
+    let (codec_total, codec_accuracy, _) =
+        run_benchmark_with_annotations("csv-wrangling", "csv-wrangling-codec");
+    let (messy_total, messy_accuracy, _) =
+        run_benchmark_with_annotations("csv-wrangling", "csv-wrangling-messy");
 
     println!("\n========================================");
     println!("       COMBINED ACCURACY REPORT        ");
     println!("========================================\n");
 
-    println!("Dataset       | Total | Accuracy");
-    println!("--------------|-------|----------");
+    println!("Dataset            | Total | Accuracy");
+    println!("-------------------|-------|----------");
     println!(
-        "POLLOCK       | {:>5} | {:>7.1}%",
+        "POLLOCK            | {:>5} | {:>7.1}%",
         pollock_total, pollock_accuracy
     );
-    println!("W3C-CSVW      | {:>5} | {:>7.1}%", w3c_total, w3c_accuracy);
+    println!(
+        "W3C-CSVW           | {:>5} | {:>7.1}%",
+        w3c_total, w3c_accuracy
+    );
+    println!(
+        "CSV Wrangling      | {:>5} | {:>7.1}%",
+        wrangling_total, wrangling_accuracy
+    );
+    println!(
+        "CSV Wrangling CODEC| {:>5} | {:>7.1}%",
+        codec_total, codec_accuracy
+    );
+    println!(
+        "CSV Wrangling MESSY| {:>5} | {:>7.1}%",
+        messy_total, messy_accuracy
+    );
 
-    let total_files = pollock_total + w3c_total;
+    let total_files = pollock_total + w3c_total + wrangling_total;
 
-    // Weighted average accuracy
+    // Weighted average accuracy (using non-overlapping datasets: POLLOCK, W3C-CSVW, CSV Wrangling)
     let combined_accuracy = if total_files > 0 {
-        (pollock_accuracy * pollock_total as f64 + w3c_accuracy * w3c_total as f64)
+        (pollock_accuracy * pollock_total as f64
+            + w3c_accuracy * w3c_total as f64
+            + wrangling_accuracy * wrangling_total as f64)
             / total_files as f64
     } else {
         0.0
     };
 
-    println!("--------------|-------|----------");
+    println!("-------------------|-------|----------");
     println!(
-        "COMBINED      | {:>5} | {:>7.1}%",
+        "COMBINED           | {:>5} | {:>7.1}%",
         total_files, combined_accuracy
     );
 }

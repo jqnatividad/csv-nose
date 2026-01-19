@@ -23,6 +23,15 @@ cargo run --release -- --benchmark tests/data/pollock
 # Run benchmark on W3C-CSVW dataset (221 files)
 cargo run --release -- --benchmark tests/data/w3c-csvw
 
+# Run benchmark on CSV Wrangling dataset (179 files)
+cargo run --release -- --benchmark tests/data/csv-wrangling
+
+# Run benchmark on CSV Wrangling filtered CODEC dataset (142 files)
+cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/data/annotations/csv-wrangling-codec.txt
+
+# Run benchmark on CSV Wrangling MESSY dataset (126 non-normal files)
+cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/data/annotations/csv-wrangling-messy.txt
+
 # Run benchmark with custom annotations file
 cargo run --release -- --benchmark tests/data/pollock --annotations tests/data/annotations/pollock.txt
 
@@ -73,3 +82,4 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
 - `tests/data/annotations/` - Dialect annotation files (checked in)
 - `tests/data/pollock/` - POLLOCK test CSVs (gitignored, copy from CSVsniffer)
 - `tests/data/w3c-csvw/` - W3C-CSVW test CSVs (gitignored, copy from CSVsniffer)
+- `tests/data/csv-wrangling/` - CSV Wrangling test CSVs (gitignored, copy from CSVsniffer)

@@ -4,3 +4,4 @@
 # See README.md "Benchmark Setup" section for instructions
 tests/data/pollock/
 tests/data/w3c-csvw/
+tests/data/csv-wrangling/
