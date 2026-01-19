@@ -170,7 +170,13 @@ impl Sniffer {
         // Build metadata from the best dialect
         // Pass structural_preamble for table row indexing (since comment rows are already skipped from data)
         // Pass total_preamble_rows for Header metadata (to report true preamble count in original file)
-        self.build_metadata(data, best, is_utf8, structural_preamble, total_preamble_rows)
+        self.build_metadata(
+            data,
+            best,
+            is_utf8,
+            structural_preamble,
+            total_preamble_rows,
+        )
     }
 
     /// Read a sample of data from the reader based on sample_size settings.
@@ -598,7 +604,8 @@ mod tests {
     fn test_mixed_preamble_detection() {
         // Both comment preamble and structural preamble
         // METADATA has 1 field, data has 3 fields
-        let data = b"# File header\nMETADATA\nname,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,CHI\n";
+        let data =
+            b"# File header\nMETADATA\nname,age,city\nAlice,30,NYC\nBob,25,LA\nCharlie,35,CHI\n";
         let metadata = Sniffer::new().sniff_bytes(data).unwrap();
         // 1 comment + 1 structural = 2 total
         assert_eq!(metadata.dialect.header.num_preamble_rows, 2);
