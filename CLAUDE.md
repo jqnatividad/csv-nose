@@ -53,11 +53,11 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
    - `Dialect` - Delimiter, quote char, header info, flexibility
    - `Quote` - Quote character enum (`None` or `Some(u8)`)
 
-4. **Benchmark Module** (`src/benchmark.rs`):
+4. **Benchmark Module** (`src/benchmark.rs`) - CLI only, not part of library:
    - Parses CSVsniffer annotation files (pipe-delimited format)
    - Runs dialect detection against test datasets
    - Calculates accuracy metrics (precision, recall, F1 score)
-   - Used by CLI `--benchmark` flag and integration tests
+   - Available only via CLI `--benchmark` flag (not exported from library)
 
 ### Key Design Decisions
 

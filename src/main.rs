@@ -1,7 +1,9 @@
 //! csv-nose CLI - CSV dialect sniffer
 
+mod benchmark;
+
+use benchmark::{find_annotations, run_benchmark};
 use clap::Parser;
-use csv_nose::benchmark::{find_annotations, run_benchmark};
 use csv_nose::{DatePreference, Quote, SampleSize, Sniffer};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

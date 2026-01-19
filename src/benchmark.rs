@@ -3,7 +3,7 @@
 //! This module provides tools to validate the Table Uniformity Method implementation
 //! against the same test datasets used by CSVsniffer, enabling accuracy comparison.
 
-use crate::{Metadata, Quote, Sniffer};
+use csv_nose::{Metadata, Quote, Sniffer};
 use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufRead};
