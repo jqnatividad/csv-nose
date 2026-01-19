@@ -1,3 +1,7 @@
+[![Crates.io](https://img.shields.io/crates/v/csv-nose.svg?logo=crates.io)](https://crates.io/crates/csv-nose)
+[![Docs.rs](https://docs.rs/csv-nose/badge.svg)](https://docs.rs/crate/csv-nose)
+![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/csv-nose.svg)
+
 # csv-nose
 
 A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsniffer) for CSV dialect detection, designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) in [qsv](https://github.com/jqnatividad/qsv).
@@ -17,7 +21,7 @@ This crate implements the algorithm from ["Detecting CSV File Dialects by Table 
 
 ```toml
 [dependencies]
-csv-nose = "0.1"
+csv-nose = "0.2"
 ```
 
 ### As a CLI tool
