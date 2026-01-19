@@ -17,13 +17,21 @@ path = "src/lib.rs"
 [[bin]]
 name = "csv-nose"
 path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["clap"]
+runtime-dispatch-simd = ["bytecount/runtime-dispatch-simd"]
+generic-simd = ["bytecount/generic-simd"]
 
 [dependencies]
 csv = "1"
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.4", features = ["derive"], optional = true }
 regex = "1"
 simdutf8 = "0.1"
 thiserror = "2.0"
+bytecount = "0.6.9"
 
 [dev-dependencies]
 tempfile = "3"
