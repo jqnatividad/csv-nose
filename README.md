@@ -1,10 +1,10 @@
 # csv-nose
 
-A Rust implementation of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsniffer) for CSV dialect detection, designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) in [qsv](https://github.com/jqnatividad/qsv).
+A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsniffer) for CSV dialect detection, designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) in [qsv](https://github.com/jqnatividad/qsv).
 
 ## Background
 
-This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by W. García. The Table Uniformity Method achieves ~94% accuracy on real-world messy CSV files by:
+This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by [W. García](https://github.com/ws-garcia). The Table Uniformity Method achieves ~95% accuracy on real-world messy CSV files by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
@@ -162,3 +162,11 @@ cargo test --test benchmark_accuracy -- --nocapture
 ## License
 
 MIT OR Apache-2.0
+
+## Naming
+
+The name "csv-nose" is a play on words, combining "CSV" (Comma-Separated Values) with "nose," suggesting the tool's ability to "sniff out" the correct CSV dialect. "Nose" also sounds like "knows," implying expertise in CSV dialect detection.
+
+## AI Contributions
+
+Claude Code using Opus 4.5 was used to assist in code generation and documentation. All AI-generated content has been reviewed and edited by human contributors to ensure accuracy and quality.
