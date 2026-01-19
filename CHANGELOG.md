@@ -7,17 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-01-19
+
 ### Added
+
 - Preamble detection for both comment lines (`#`) and structural preambles
   (rows with inconsistent field counts at the start of files)
 - `Header.num_preamble_rows` now reports the total preamble count
 
 ### Fixed
+
 - Bug where comment preamble count was detected but discarded
+
+### Performance
+
+| Dataset | v0.1.0 | v0.2.0 | Change |
+|:--------|:-------|:-------|:-------|
+| POLLOCK | 95.95% | 95.95% | — |
+| W3C-CSVW | 95.02% | 94.12% | -0.90% |
+| CSV Wrangling | 90.50% | 91.06% | +0.56% |
+| CSV Wrangling CODEC | 90.14% | 90.85% | +0.71% |
+| CSV Wrangling MESSY | 90.48% | 89.68% | -0.80% |
 
 ## [0.1.0] - 2025-01-18
 
 ### Added
+
 - Initial release implementing the Table Uniformity Method from
   "Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"
   (García, 2024)
@@ -37,10 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Forced delimiter and quote character options
 
 ### Performance
+
 - Zero error rate across all benchmark datasets (no crashes on malformed data)
 - ~95% accuracy on POLLOCK dataset
 - ~94% accuracy on W3C-CSVW dataset
 - ~91% accuracy on CSV Wrangling dataset
 
-[Unreleased]: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jqnatividad/csv-nose/releases/tag/v0.1.0
