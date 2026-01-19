@@ -192,21 +192,21 @@ fn split_line(line: &str, dialect: &PotentialDialect) -> Vec<String> {
     let mut chars = line.chars().peekable();
 
     while let Some(c) = chars.next() {
-        if let Some(q) = quote_char {
-            if c == q {
-                if in_quotes {
-                    // Check for escaped quote (doubled quote)
-                    if chars.peek() == Some(&q) {
-                        current_field.push(q);
-                        chars.next();
-                    } else {
-                        in_quotes = false;
-                    }
+        if let Some(q) = quote_char
+            && c == q
+        {
+            if in_quotes {
+                // Check for escaped quote (doubled quote)
+                if chars.peek() == Some(&q) {
+                    current_field.push(q);
+                    chars.next();
                 } else {
-                    in_quotes = true;
+                    in_quotes = false;
                 }
-                continue;
+            } else {
+                in_quotes = true;
             }
+            continue;
         }
 
         if c == delimiter && !in_quotes {

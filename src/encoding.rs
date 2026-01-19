@@ -19,11 +19,7 @@ pub fn has_utf8_bom(data: &[u8]) -> bool {
 
 /// Skip the UTF-8 BOM if present and return the remaining data.
 pub fn skip_bom(data: &[u8]) -> &[u8] {
-    if has_utf8_bom(data) {
-        &data[3..]
-    } else {
-        data
-    }
+    if has_utf8_bom(data) { &data[3..] } else { data }
 }
 
 /// Detect the encoding of the data.

@@ -269,7 +269,9 @@ fn print_csv_output(path: &Path, metadata: &csv_nose::Metadata) {
     // CSV header (print only for first file or could be configured)
     unsafe {
         if !HEADER_PRINTED {
-            println!("file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len");
+            println!(
+                "file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
+            );
             HEADER_PRINTED = true;
         }
     }

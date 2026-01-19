@@ -128,7 +128,7 @@ fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
     // Calculate consistency excluding nulls
     let max_non_null = type_counts
         .iter()
-        .filter(|(&t, _)| t != Type::NULL)
+        .filter(|&(&t, _)| t != Type::NULL)
         .map(|(_, &c)| c)
         .max()
         .unwrap_or(0);

@@ -12,9 +12,9 @@ use crate::field_type::Type;
 use crate::metadata::{Dialect, Header, Metadata, Quote};
 use crate::sample::{DatePreference, SampleSize};
 use crate::tum::potential_dialects::{
-    detect_line_terminator, generate_dialects_with_terminator, PotentialDialect,
+    PotentialDialect, detect_line_terminator, generate_dialects_with_terminator,
 };
-use crate::tum::score::{find_best_dialect, score_all_dialects, DialectScore};
+use crate::tum::score::{DialectScore, find_best_dialect, score_all_dialects};
 use crate::tum::table::parse_table;
 use crate::tum::type_detection::infer_column_types;
 

@@ -4,7 +4,7 @@
 //! to rank potential CSV dialects.
 
 use super::potential_dialects::PotentialDialect;
-use super::table::{parse_table, Table};
+use super::table::{Table, parse_table};
 use super::type_detection::{calculate_pattern_score, calculate_type_score};
 use super::uniformity::{calculate_tau_0, calculate_tau_1, is_uniform};
 

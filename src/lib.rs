@@ -67,7 +67,7 @@ pub use sample::{DatePreference, SampleSize};
 pub use sniffer::Sniffer;
 
 // Re-export for advanced usage
-pub use encoding::{detect_encoding, is_utf8, EncodingInfo};
+pub use encoding::{EncodingInfo, detect_encoding, is_utf8};
 
 #[cfg(test)]
 mod tests {
