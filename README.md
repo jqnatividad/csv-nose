@@ -1,6 +1,7 @@
 [![Crates.io](https://img.shields.io/crates/v/csv-nose.svg?logo=crates.io)](https://crates.io/crates/csv-nose)
 [![Docs.rs](https://docs.rs/csv-nose/badge.svg)](https://docs.rs/crate/csv-nose)
 ![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/csv-nose.svg)
+[![DOI](https://zenodo.org/badge/1137017320.svg)](https://doi.org/10.5281/zenodo.18303093)
 
 # csv-nose
 
