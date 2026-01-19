@@ -106,18 +106,15 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
     // Find or use provided annotations file
     let annotations_path = if let Some(ref path) = args.annotations {
         path.clone()
+    } else if let Some(path) = find_annotations(data_dir) {
+        path
     } else {
-        match find_annotations(data_dir) {
-            Some(path) => path,
-            None => {
-                eprintln!(
-                    "Error: Could not find annotations file for {}",
-                    data_dir.display()
-                );
-                eprintln!("Use --annotations to specify the path to the annotations file");
-                return ExitCode::FAILURE;
-            }
-        }
+        eprintln!(
+            "Error: Could not find annotations file for {}",
+            data_dir.display()
+        );
+        eprintln!("Use --annotations to specify the path to the annotations file");
+        return ExitCode::FAILURE;
     };
 
     println!("Running benchmark on: {}", data_dir.display());
@@ -131,7 +128,7 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("Error running benchmark: {}", e);
+            eprintln!("Error running benchmark: {e}");
             ExitCode::FAILURE
         }
     }
@@ -251,7 +248,7 @@ fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) 
             if i > 0 {
                 print!(",");
             }
-            print!(r#"{{"name":"{}","type":"{}"}}"#, name, typ);
+            print!(r#"{{"name":"{name}","type":"{typ}"}}"#);
         }
         print!("]");
     }
@@ -260,13 +257,14 @@ fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) 
 }
 
 fn print_csv_output(path: &Path, metadata: &csv_nose::Metadata) {
+    static mut HEADER_PRINTED: bool = false;
+
     let quote_str = match metadata.dialect.quote {
         Quote::None => "none".to_string(),
         Quote::Some(q) => format!("{}", q as char),
     };
 
     // CSV header (print only for first file or could be configured)
-    static mut HEADER_PRINTED: bool = false;
     unsafe {
         if !HEADER_PRINTED {
             println!("file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len");

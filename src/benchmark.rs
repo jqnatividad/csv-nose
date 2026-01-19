@@ -151,18 +151,16 @@ impl BenchmarkResult {
                 if !result.quote_match {
                     let exp = result
                         .expected_quote
-                        .map(|c| format!("'{}'", c as char))
-                        .unwrap_or_else(|| "none".to_string());
+                        .map_or_else(|| "none".to_string(), |c| format!("'{}'", c as char));
                     let det = result
                         .detected_quote
-                        .map(|c| format!("'{}'", c as char))
-                        .unwrap_or_else(|| "none".to_string());
-                    print!("quote: expected {} got {}", exp, det);
+                        .map_or_else(|| "none".to_string(), |c| format!("'{}'", c as char));
+                    print!("quote: expected {exp} got {det}");
                 }
             }
 
             if let Some(ref err) = result.error {
-                print!(" - {}", err);
+                print!(" - {err}");
             }
 
             println!();
@@ -403,7 +401,7 @@ pub fn find_annotations(data_dir: &Path) -> Option<PathBuf> {
     // Try annotations subdirectory
     let annotations_dir = parent.join("annotations");
     if annotations_dir.is_dir() {
-        let annotation_file = annotations_dir.join(format!("{}.txt", dir_name));
+        let annotation_file = annotations_dir.join(format!("{dir_name}.txt"));
         if annotation_file.exists() {
             return Some(annotation_file);
         }

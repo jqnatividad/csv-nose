@@ -46,8 +46,7 @@ impl Table {
         counts
             .into_iter()
             .max_by_key(|(_, count)| *count)
-            .map(|(fc, _)| fc)
-            .unwrap_or(0)
+            .map_or(0, |(fc, _)| fc)
     }
 
     /// Returns the minimum field count.
@@ -106,7 +105,10 @@ pub fn parse_table(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> 
     while table.rows.len() < limit {
         match reader.read_record(&mut record) {
             Ok(true) => {
-                let row: Vec<String> = record.iter().map(|s| s.to_string()).collect();
+                let row: Vec<String> = record
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect();
                 let field_count = row.len();
                 table.rows.push(row);
                 table.field_counts.push(field_count);

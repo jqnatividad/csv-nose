@@ -200,8 +200,8 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
             match a_delim_priority.cmp(&b_delim_priority) {
                 std::cmp::Ordering::Equal => {
                     // Same delimiter priority, use quote preference
-                    let a_quote_priority = quote_priority(&a.dialect.quote);
-                    let b_quote_priority = quote_priority(&b.dialect.quote);
+                    let a_quote_priority = quote_priority(a.dialect.quote);
+                    let b_quote_priority = quote_priority(b.dialect.quote);
                     return a_quote_priority.cmp(&b_quote_priority);
                 }
                 other => return other,
@@ -216,8 +216,8 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
             match a_delim_priority.cmp(&b_delim_priority) {
                 std::cmp::Ordering::Equal => {
                     // Delimiters have same priority, check quotes
-                    let a_quote_priority = quote_priority(&a.dialect.quote);
-                    let b_quote_priority = quote_priority(&b.dialect.quote);
+                    let a_quote_priority = quote_priority(a.dialect.quote);
+                    let b_quote_priority = quote_priority(b.dialect.quote);
 
                     match a_quote_priority.cmp(&b_quote_priority) {
                         std::cmp::Ordering::Equal => a
@@ -258,7 +258,7 @@ fn delimiter_priority(delimiter: u8) -> u8 {
 
 /// Returns a priority score for quote characters (higher = preferred).
 /// Double-quote is the standard default and should be preferred.
-fn quote_priority(quote: &crate::metadata::Quote) -> u8 {
+fn quote_priority(quote: crate::metadata::Quote) -> u8 {
     use crate::metadata::Quote;
     match quote {
         Quote::Some(b'"') => 3,  // Standard default - highest priority
