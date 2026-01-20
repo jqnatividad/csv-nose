@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-19
+
+### Added
+
+- `PERFORMANCE.md` documenting detection accuracy, known limitations, and workarounds
+
+### Changed
+
+- Applied select Clippy suggestions for cleaner code
+
+### Performance
+
+- Cache pattern categories via LazyLock (eliminates ~25,500 Vec allocs/sniff)
+- Pre-compute quote counts once for all dialect evaluations (eliminates 26 scans)
+- Use Cow for line normalization (zero-copy for LF-terminated files)
+- Cache modal field count in Table struct (eliminates HashMap allocs)
+- Return best table from scoring to avoid redundant parsing (saves 2 parses)
+- Fix O(n²) preamble detection with suffix count precomputation
+
+No change in detection accuracy.
+
+| Dataset | v0.2.x | v0.3.0 | Change |
+|:--------|:-------|:-------|:-------|
+| POLLOCK | 95.95% | 95.95% | — |
+| W3C-CSVW | 94.12% | 94.12% | — |
+| CSV Wrangling | 91.06% | 91.06% | — |
+| CSV Wrangling CODEC | 90.85% | 90.85% | — |
+| CSV Wrangling MESSY | 89.68% | 89.68% | — |
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.2.1...v0.3.0
+
 ## [0.2.1] - 2025-01-19
 
 ### Added
@@ -21,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-No change in performance.
+No change in detection accuracy.
 
 **Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...v0.2.1
 
@@ -78,4 +109,8 @@ No change in performance.
 - ~94% accuracy on W3C-CSVW dataset
 - ~91% accuracy on CSV Wrangling dataset
 
+[Unreleased]: https://github.com/jqnatividad/csv-nose/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/jqnatividad/csv-nose/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jqnatividad/csv-nose/releases/tag/v0.1.0
