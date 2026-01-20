@@ -54,9 +54,13 @@ impl Table {
             *counts.entry(fc).or_insert(0) += 1;
         }
 
+        // Use deterministic tie-breaking: prefer higher field count when frequencies are equal
+        // This ensures consistent results regardless of HashMap iteration order
         counts
             .into_iter()
-            .max_by_key(|(_, count)| *count)
+            .max_by(|(fc_a, count_a), (fc_b, count_b)| {
+                count_a.cmp(count_b).then_with(|| fc_a.cmp(fc_b))
+            })
             .map_or(0, |(fc, _)| fc)
     }
 

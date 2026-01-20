@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Applied select Clippy suggestions for cleaner code
 
+### Fixed
+
+- Non-deterministic benchmark results caused by HashMap iteration order in modal
+  field count calculation. Tie-breaking is now deterministic (prefers higher field count).
+
 ### Performance
 
 - Cache pattern categories via LazyLock (eliminates ~25,500 Vec allocs/sniff)
@@ -26,15 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Return best table from scoring to avoid redundant parsing (saves 2 parses)
 - Fix O(n²) preamble detection with suffix count precomputation
 
-No change in detection accuracy.
+Results are now deterministic (v0.2.x had non-deterministic tie-breaking).
 
-| Dataset | v0.2.x | v0.3.0 | Change |
-|:--------|:-------|:-------|:-------|
-| POLLOCK | 95.95% | 95.95% | — |
-| W3C-CSVW | 94.12% | 94.12% | — |
+| Dataset | v0.2.x* | v0.3.0 | Change |
+|:--------|:--------|:-------|:-------|
+| POLLOCK | 95.95% | 96.62% | +0.67% |
+| W3C-CSVW | 94.12% | 93.21% | -0.91% |
 | CSV Wrangling | 91.06% | 91.06% | — |
 | CSV Wrangling CODEC | 90.85% | 90.85% | — |
 | CSV Wrangling MESSY | 89.68% | 89.68% | — |
+
+*v0.2.x results varied between runs due to non-deterministic HashMap iteration
 
 **Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.2.1...v0.3.0
 
