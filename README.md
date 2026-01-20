@@ -5,11 +5,11 @@
 
 # csv-nose
 
-A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsniffer) for CSV dialect detection, designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) in [qsv](https://github.com/jqnatividad/qsv).
+A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsniffer) for CSV dialect detection.
 
 ## Background
 
-This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by [W. García](https://github.com/ws-garcia). The Table Uniformity Method achieves ~95% accuracy on real-world messy CSV files by:
+This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by [W. García](https://github.com/ws-garcia). The Table Uniformity Method achieves ~96% accuracy on real-world messy CSV files by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
@@ -57,9 +57,64 @@ csv-nose --delimiter-only data.csv   # Output only the delimiter
 csv-nose -v data.csv                 # Verbose output with field types
 ```
 
+```bash
+csv-nose -v /tmp/NYC_311_SR_2010-2020-sample-1M.csv
+File: /tmp/NYC_311_SR_2010-2020-sample-1M.csv
+  Delimiter: ','
+  Quote: '"'
+  Has header: true
+  Preamble rows: 0
+  Flexible: false
+  UTF-8: true
+  Fields: 41
+  Avg record length: 1024 bytes
+  Field details:
+    1: Unique Key (Unsigned)
+    2: Created Date (DateTime)
+    3: Closed Date (DateTime)
+    4: Agency (Text)
+    5: Agency Name (Text)
+    6: Complaint Type (Text)
+    7: Descriptor (Text)
+    8: Location Type (Text)
+    9: Incident Zip (Unsigned)
+    10: Incident Address (Text)
+    11: Street Name (Text)
+    12: Cross Street 1 (Text)
+    13: Cross Street 2 (Text)
+    14: Intersection Street 1 (Text)
+    15: Intersection Street 2 (Text)
+    16: Address Type (Text)
+    17: City (Text)
+    18: Landmark (Text)
+    19: Facility Type (Text)
+    20: Status (Text)
+    21: Due Date (DateTime)
+    22: Resolution Description (Text)
+    23: Resolution Action Updated Date (DateTime)
+    24: Community Board (Text)
+    25: BBL (Unsigned)
+    26: Borough (Text)
+    27: X Coordinate (State Plane) (Unsigned)
+    28: Y Coordinate (State Plane) (Unsigned)
+    29: Open Data Channel Type (Text)
+    30: Park Facility Name (Text)
+    31: Park Borough (Text)
+    32: Vehicle Type (NULL)
+    33: Taxi Company Borough (NULL)
+    34: Taxi Pick Up Location (Text)
+    35: Bridge Highway Name (NULL)
+    36: Bridge Highway Direction (NULL)
+    37: Road Ramp (NULL)
+    38: Bridge Highway Segment (NULL)
+    39: Latitude (Float)
+    40: Longitude (Float)
+    41: Location (Text)
+```
+
 ## API Compatibility
 
-The public API mirrors qsv-sniffer for easy migration:
+This library is designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) used by [qsv](https://github.com/jqnatividad/qsv). The public API mirrors qsv-sniffer for easy migration:
 
 ```rust
 use csv_nose::{Sniffer, Metadata, Dialect, Header, Quote, Type, SampleSize, DatePreference};
