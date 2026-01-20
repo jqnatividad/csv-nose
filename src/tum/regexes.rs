@@ -123,115 +123,122 @@ pub struct PatternCategory {
     pub weight: f64,
 }
 
+/// Static pattern categories for type detection (cached via LazyLock).
+static PATTERN_CATEGORIES: std::sync::LazyLock<Vec<PatternCategory>> =
+    std::sync::LazyLock::new(|| {
+        vec![
+            PatternCategory {
+                pattern: &EMPTY_PATTERN,
+                category: "empty",
+                weight: 0.0,
+            },
+            PatternCategory {
+                pattern: &NULL_PATTERN,
+                category: "null",
+                weight: 0.5,
+            },
+            PatternCategory {
+                pattern: &BOOLEAN_PATTERN,
+                category: "boolean",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &UNSIGNED_PATTERN,
+                category: "unsigned",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &SIGNED_PATTERN,
+                category: "signed",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &FLOAT_PATTERN,
+                category: "float",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &FLOAT_EURO_PATTERN,
+                category: "float_euro",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &FLOAT_THOUSANDS_PATTERN,
+                category: "float_thousands",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &DATE_ISO_PATTERN,
+                category: "date",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &DATE_US_PATTERN,
+                category: "date",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &DATE_EURO_PATTERN,
+                category: "date",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &DATETIME_ISO_PATTERN,
+                category: "datetime",
+                weight: 1.0,
+            },
+            PatternCategory {
+                pattern: &DATETIME_GENERAL_PATTERN,
+                category: "datetime",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &TIME_PATTERN,
+                category: "time",
+                weight: 0.8,
+            },
+            PatternCategory {
+                pattern: &EMAIL_PATTERN,
+                category: "email",
+                weight: 0.8,
+            },
+            PatternCategory {
+                pattern: &URL_PATTERN,
+                category: "url",
+                weight: 0.8,
+            },
+            PatternCategory {
+                pattern: &IPV4_PATTERN,
+                category: "ipv4",
+                weight: 0.8,
+            },
+            PatternCategory {
+                pattern: &CURRENCY_PATTERN,
+                category: "currency",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &PERCENTAGE_PATTERN,
+                category: "percentage",
+                weight: 0.9,
+            },
+            PatternCategory {
+                pattern: &UUID_PATTERN,
+                category: "uuid",
+                weight: 0.8,
+            },
+            PatternCategory {
+                pattern: &ALPHANUM_PATTERN,
+                category: "alphanum",
+                weight: 0.3,
+            },
+        ]
+    });
+
 /// Get all pattern categories for type detection.
-pub fn get_pattern_categories() -> Vec<PatternCategory> {
-    vec![
-        PatternCategory {
-            pattern: &EMPTY_PATTERN,
-            category: "empty",
-            weight: 0.0,
-        },
-        PatternCategory {
-            pattern: &NULL_PATTERN,
-            category: "null",
-            weight: 0.5,
-        },
-        PatternCategory {
-            pattern: &BOOLEAN_PATTERN,
-            category: "boolean",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &UNSIGNED_PATTERN,
-            category: "unsigned",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &SIGNED_PATTERN,
-            category: "signed",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &FLOAT_PATTERN,
-            category: "float",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &FLOAT_EURO_PATTERN,
-            category: "float_euro",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &FLOAT_THOUSANDS_PATTERN,
-            category: "float_thousands",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &DATE_ISO_PATTERN,
-            category: "date",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &DATE_US_PATTERN,
-            category: "date",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &DATE_EURO_PATTERN,
-            category: "date",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &DATETIME_ISO_PATTERN,
-            category: "datetime",
-            weight: 1.0,
-        },
-        PatternCategory {
-            pattern: &DATETIME_GENERAL_PATTERN,
-            category: "datetime",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &TIME_PATTERN,
-            category: "time",
-            weight: 0.8,
-        },
-        PatternCategory {
-            pattern: &EMAIL_PATTERN,
-            category: "email",
-            weight: 0.8,
-        },
-        PatternCategory {
-            pattern: &URL_PATTERN,
-            category: "url",
-            weight: 0.8,
-        },
-        PatternCategory {
-            pattern: &IPV4_PATTERN,
-            category: "ipv4",
-            weight: 0.8,
-        },
-        PatternCategory {
-            pattern: &CURRENCY_PATTERN,
-            category: "currency",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &PERCENTAGE_PATTERN,
-            category: "percentage",
-            weight: 0.9,
-        },
-        PatternCategory {
-            pattern: &UUID_PATTERN,
-            category: "uuid",
-            weight: 0.8,
-        },
-        PatternCategory {
-            pattern: &ALPHANUM_PATTERN,
-            category: "alphanum",
-            weight: 0.3,
-        },
-    ]
+/// Returns a static reference to avoid allocating a new Vec on each call.
+pub fn get_pattern_categories() -> &'static [PatternCategory] {
+    &PATTERN_CATEGORIES
 }
 
 #[cfg(test)]

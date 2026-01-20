@@ -2,6 +2,7 @@
 
 use super::potential_dialects::PotentialDialect;
 use crate::metadata::Quote;
+use std::borrow::Cow;
 use std::io::{BufRead, Cursor};
 
 /// A parsed CSV table for analysis.
@@ -11,6 +12,8 @@ pub struct Table {
     pub rows: Vec<Vec<String>>,
     /// Number of fields in each row.
     pub field_counts: Vec<usize>,
+    /// Cached modal (most common) field count, computed during parsing.
+    cached_modal_field_count: usize,
 }
 
 impl Table {
@@ -19,6 +22,7 @@ impl Table {
         Self {
             rows: Vec::new(),
             field_counts: Vec::new(),
+            cached_modal_field_count: 0,
         }
     }
 
@@ -33,13 +37,20 @@ impl Table {
     }
 
     /// Returns the modal (most common) field count.
+    /// Uses cached value computed during parsing for efficiency.
     pub fn modal_field_count(&self) -> usize {
-        if self.field_counts.is_empty() {
+        self.cached_modal_field_count
+    }
+
+    /// Compute the modal field count from field_counts.
+    /// Called internally after parsing or when constructing tables manually.
+    fn compute_modal_field_count(field_counts: &[usize]) -> usize {
+        if field_counts.is_empty() {
             return 0;
         }
 
         let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-        for &fc in &self.field_counts {
+        for &fc in field_counts {
             *counts.entry(fc).or_insert(0) += 1;
         }
 
@@ -47,6 +58,11 @@ impl Table {
             .into_iter()
             .max_by_key(|(_, count)| *count)
             .map_or(0, |(fc, _)| fc)
+    }
+
+    /// Update the cached modal field count. Call after modifying field_counts.
+    pub fn update_modal_field_count(&mut self) {
+        self.cached_modal_field_count = Self::compute_modal_field_count(&self.field_counts);
     }
 
     /// Returns the minimum field count.
@@ -118,15 +134,19 @@ pub fn parse_table(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> 
         }
     }
 
+    // Cache the modal field count for efficient repeated access
+    table.update_modal_field_count();
+
     table
 }
 
 /// Normalize line endings to LF for consistent parsing.
-fn normalize_line_endings(data: &[u8], dialect: &PotentialDialect) -> Vec<u8> {
+/// Returns `Cow::Borrowed` for LF data (zero-copy) and `Cow::Owned` for CR/CRLF.
+fn normalize_line_endings<'a>(data: &'a [u8], dialect: &PotentialDialect) -> Cow<'a, [u8]> {
     use super::potential_dialects::LineTerminator;
 
     match dialect.line_terminator {
-        LineTerminator::LF => data.to_vec(),
+        LineTerminator::LF => Cow::Borrowed(data), // Zero-copy for LF
         LineTerminator::CRLF => {
             // Replace \r\n with \n
             let mut result = Vec::with_capacity(data.len());
@@ -140,13 +160,15 @@ fn normalize_line_endings(data: &[u8], dialect: &PotentialDialect) -> Vec<u8> {
                     i += 1;
                 }
             }
-            result
+            Cow::Owned(result)
         }
         LineTerminator::CR => {
             // Replace standalone \r with \n
-            data.iter()
-                .map(|&b| if b == b'\r' { b'\n' } else { b })
-                .collect()
+            Cow::Owned(
+                data.iter()
+                    .map(|&b| if b == b'\r' { b'\n' } else { b })
+                    .collect(),
+            )
         }
     }
 }
@@ -159,7 +181,7 @@ pub fn parse_table_simple(data: &[u8], dialect: &PotentialDialect, max_rows: usi
     let mut table = Table::new();
     let normalized = normalize_line_endings(data, dialect);
 
-    let cursor = Cursor::new(&normalized);
+    let cursor = Cursor::new(normalized.as_ref());
     let limit = if max_rows == 0 { usize::MAX } else { max_rows };
 
     for line in cursor.lines().take(limit) {
@@ -173,6 +195,9 @@ pub fn parse_table_simple(data: &[u8], dialect: &PotentialDialect, max_rows: usi
         table.rows.push(fields);
         table.field_counts.push(field_count);
     }
+
+    // Cache the modal field count for efficient repeated access
+    table.update_modal_field_count();
 
     table
 }
@@ -251,6 +276,7 @@ mod tests {
     fn test_modal_field_count() {
         let mut table = Table::new();
         table.field_counts = vec![3, 3, 3, 4, 3];
+        table.update_modal_field_count();
         assert_eq!(table.modal_field_count(), 3);
     }
 }

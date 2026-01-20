@@ -8,6 +8,25 @@ use super::table::{Table, parse_table};
 use super::type_detection::{calculate_pattern_score, calculate_type_score};
 use super::uniformity::{calculate_tau_0, calculate_tau_1, is_uniform};
 
+/// Pre-computed quote character counts for the data.
+/// Used to avoid redundant byte counting across multiple dialect evaluations.
+#[derive(Debug, Clone, Copy)]
+struct QuoteCounts {
+    double: usize,
+    single: usize,
+    data_len: usize,
+}
+
+impl QuoteCounts {
+    fn new(data: &[u8]) -> Self {
+        Self {
+            double: bytecount::count(data, b'"'),
+            single: bytecount::count(data, b'\''),
+            data_len: data.len(),
+        }
+    }
+}
+
 /// Score result for a dialect.
 #[derive(Debug, Clone)]
 pub struct DialectScore {
@@ -175,20 +194,37 @@ fn compute_gamma(
 /// Score a dialect against the data.
 ///
 /// Returns the DialectScore which includes the gamma score and component scores.
+#[allow(dead_code)]
 pub fn score_dialect(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> DialectScore {
+    let quote_counts = QuoteCounts::new(data);
+    let (score, _table) = score_dialect_with_counts(data, dialect, max_rows, &quote_counts);
+    score
+}
+
+/// Score a dialect against the data with pre-computed quote counts.
+///
+/// This is the internal implementation that accepts pre-computed QuoteCounts
+/// to avoid redundant byte counting when scoring multiple dialects.
+/// Returns both the score and the parsed table for potential reuse.
+fn score_dialect_with_counts(
+    data: &[u8],
+    dialect: &PotentialDialect,
+    max_rows: usize,
+    quote_counts: &QuoteCounts,
+) -> (DialectScore, Table) {
     let table = parse_table(data, dialect, max_rows);
 
     if table.is_empty() {
-        return DialectScore::zero(dialect.clone());
+        return (DialectScore::zero(dialect.clone()), table);
     }
 
     let mut score = DialectScore::new(dialect.clone(), &table);
 
-    // Apply quote evidence scoring
-    let quote_multiplier = quote_evidence_score(data, dialect);
+    // Apply quote evidence scoring using pre-computed counts
+    let quote_multiplier = quote_evidence_score_with_counts(quote_counts, dialect);
     score.gamma *= quote_multiplier;
 
-    score
+    (score, table)
 }
 
 /// Calculate a score multiplier based on quote character evidence in the data.
@@ -199,24 +235,24 @@ pub fn score_dialect(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -
 ///
 /// The scoring is conservative to avoid false positives from apostrophes
 /// in text content (e.g., "John's" contains a single quote but isn't quoted).
+#[allow(dead_code)]
 fn quote_evidence_score(data: &[u8], dialect: &PotentialDialect) -> f64 {
+    let quote_counts = QuoteCounts::new(data);
+    quote_evidence_score_with_counts(&quote_counts, dialect)
+}
+
+/// Calculate quote evidence score using pre-computed quote counts.
+/// This avoids redundant byte counting when scoring multiple dialects.
+fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &PotentialDialect) -> f64 {
     use crate::metadata::Quote;
 
-    // Count occurrences of each quote type
-    let double_quote_count = bytecount::count(data, b'"');
-    let single_quote_count = bytecount::count(data, b'\'');
-
-    // Only apply quote evidence when there's a clear signal
-    // A single quote appearing at the start of a line after a delimiter is more
-    // indicative of quoting than random apostrophes in text
-    let data_len = data.len();
-    if data_len == 0 {
+    if quote_counts.data_len == 0 {
         return 1.0;
     }
 
     // Calculate density (quotes per 1000 bytes) - higher density suggests quoting
-    let double_density = (double_quote_count * 1000) / data_len;
-    let single_density = (single_quote_count * 1000) / data_len;
+    let double_density = (quote_counts.double * 1000) / quote_counts.data_len;
+    let single_density = (quote_counts.single * 1000) / quote_counts.data_len;
 
     // Threshold: need at least ~0.5% quote density to consider it significant
     // This filters out incidental apostrophes in text
@@ -359,14 +395,44 @@ const fn quote_priority(quote: crate::metadata::Quote) -> u8 {
 }
 
 /// Score all potential dialects and return sorted by gamma score (descending).
+#[allow(dead_code)]
 pub fn score_all_dialects(
     data: &[u8],
     dialects: &[PotentialDialect],
     max_rows: usize,
 ) -> Vec<DialectScore> {
+    let (scores, _) = score_all_dialects_with_best_table(data, dialects, max_rows);
+    scores
+}
+
+/// Score all potential dialects and return sorted by gamma score (descending),
+/// along with the parsed table of the best-scoring dialect.
+///
+/// This avoids re-parsing the best dialect's data for preamble detection
+/// and metadata building.
+pub fn score_all_dialects_with_best_table(
+    data: &[u8],
+    dialects: &[PotentialDialect],
+    max_rows: usize,
+) -> (Vec<DialectScore>, Option<Table>) {
+    // Pre-compute quote counts once for all dialect evaluations
+    let quote_counts = QuoteCounts::new(data);
+
+    // Score all dialects and keep track of the best table
+    let mut best_table: Option<Table> = None;
+    let mut best_gamma: f64 = f64::NEG_INFINITY;
+
     let mut scores: Vec<DialectScore> = dialects
         .iter()
-        .map(|d| score_dialect(data, d, max_rows))
+        .map(|d| {
+            let (score, table) = score_dialect_with_counts(data, d, max_rows, &quote_counts);
+            // Track the table with the highest gamma score
+            if score.gamma > best_gamma {
+                best_gamma = score.gamma;
+                best_table = Some(table);
+            }
+            score
+        })
         .collect();
 
     // Sort by gamma score descending
@@ -376,7 +442,7 @@ pub fn score_all_dialects(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    scores
+    (scores, best_table)
 }
 
 #[cfg(test)]

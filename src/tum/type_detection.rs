@@ -37,7 +37,8 @@ pub fn detect_cell_type(value: &str) -> Type {
     // Check for float
     if FLOAT_PATTERN.is_match(trimmed) {
         // Distinguish between integer-like floats and actual floats
-        if trimmed.contains('.') || trimmed.to_lowercase().contains('e') {
+        // Avoid to_lowercase() allocation by checking both cases directly
+        if trimmed.contains('.') || trimmed.contains('e') || trimmed.contains('E') {
             return Type::Float;
         }
     }
@@ -173,10 +174,8 @@ pub fn pattern_specificity_score(value: &str) -> f64 {
         return 0.0;
     }
 
-    // Check patterns in order of specificity
-    let patterns = get_pattern_categories();
-
-    for pc in &patterns {
+    // Check patterns in order of specificity (uses cached static slice)
+    for pc in get_pattern_categories() {
         if pc.pattern.is_match(trimmed) {
             return pc.weight;
         }
@@ -247,6 +246,7 @@ mod tests {
             ],
         ];
         table.field_counts = vec![3, 3, 3];
+        table.update_modal_field_count();
 
         let types = infer_column_types(&table);
         assert_eq!(types, vec![Type::Unsigned, Type::Text, Type::Date]);

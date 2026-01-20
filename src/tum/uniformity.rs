@@ -163,6 +163,7 @@ mod tests {
     fn test_tau_0_uniform() {
         let mut table = Table::new();
         table.field_counts = vec![3, 3, 3, 3, 3];
+        table.update_modal_field_count();
 
         let tau_0 = calculate_tau_0(&table);
         assert!((tau_0 - 1.0).abs() < 0.001); // Should be 1.0 for uniform counts
@@ -172,6 +173,7 @@ mod tests {
     fn test_tau_0_varied() {
         let mut table = Table::new();
         table.field_counts = vec![3, 4, 3, 5, 3];
+        table.update_modal_field_count();
 
         let tau_0 = calculate_tau_0(&table);
         assert!(tau_0 < 1.0); // Should be less than 1.0 for varied counts
@@ -182,6 +184,7 @@ mod tests {
     fn test_tau_1_uniform() {
         let mut table = Table::new();
         table.field_counts = vec![3, 3, 3, 3, 3];
+        table.update_modal_field_count();
 
         let tau_1 = calculate_tau_1(&table);
         assert!((tau_1 - 1.0).abs() < 0.001); // Should be 1.0 for uniform counts
@@ -191,10 +194,12 @@ mod tests {
     fn test_is_uniform() {
         let mut uniform_table = Table::new();
         uniform_table.field_counts = vec![3, 3, 3];
+        uniform_table.update_modal_field_count();
         assert!(is_uniform(&uniform_table));
 
         let mut varied_table = Table::new();
         varied_table.field_counts = vec![3, 4, 3];
+        varied_table.update_modal_field_count();
         assert!(!is_uniform(&varied_table));
     }
 }

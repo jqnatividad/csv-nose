@@ -14,8 +14,8 @@ use crate::sample::{DatePreference, SampleSize};
 use crate::tum::potential_dialects::{
     PotentialDialect, detect_line_terminator, generate_dialects_with_terminator,
 };
-use crate::tum::score::{DialectScore, find_best_dialect, score_all_dialects};
-use crate::tum::table::parse_table;
+use crate::tum::score::{DialectScore, find_best_dialect, score_all_dialects_with_best_table};
+use crate::tum::table::{Table, parse_table};
 use crate::tum::type_detection::infer_column_types;
 
 /// CSV dialect sniffer using the Table Uniformity Method.
@@ -149,25 +149,22 @@ impl Sniffer {
             SampleSize::Bytes(_) | SampleSize::All => 0, // Already limited by read_sample
         };
 
-        // Score all dialects
-        let scores = score_all_dialects(data, &dialects, max_rows);
+        // Score all dialects and get the best table (avoids re-parsing)
+        let (scores, best_table) = score_all_dialects_with_best_table(data, &dialects, max_rows);
 
         // Find the best dialect
         let best = find_best_dialect(&scores)
             .ok_or_else(|| SnifferError::NoDialectDetected("No valid dialect found".to_string()))?;
 
-        // Detect structural preamble (rows with inconsistent field counts)
-        let max_rows = match self.sample_size {
-            SampleSize::Records(n) => n,
-            SampleSize::Bytes(_) | SampleSize::All => 0,
-        };
-        let table_for_preamble = parse_table(data, &best.dialect, max_rows);
+        // Detect structural preamble using the already-parsed table
+        let table_for_preamble =
+            best_table.unwrap_or_else(|| parse_table(data, &best.dialect, max_rows));
         let structural_preamble = detect_structural_preamble(&table_for_preamble);
 
         // Total preamble = comment rows + structural rows
         let total_preamble_rows = comment_preamble_rows + structural_preamble;
 
-        // Build metadata from the best dialect
+        // Build metadata from the best dialect, reusing the already-parsed table
         // Pass structural_preamble for table row indexing (since comment rows are already skipped from data)
         // Pass total_preamble_rows for Header metadata (to report true preamble count in original file)
         self.build_metadata(
@@ -176,6 +173,7 @@ impl Sniffer {
             is_utf8,
             structural_preamble,
             total_preamble_rows,
+            table_for_preamble,
         )
     }
 
@@ -225,6 +223,7 @@ impl Sniffer {
     /// # Arguments
     /// * `structural_preamble` - Number of structural preamble rows in the table (for row indexing)
     /// * `total_preamble_rows` - Total preamble rows including comments (for Header metadata)
+    /// * `table` - Pre-parsed table to avoid redundant parsing
     fn build_metadata(
         &self,
         data: &[u8],
@@ -232,15 +231,8 @@ impl Sniffer {
         is_utf8: bool,
         structural_preamble: usize,
         total_preamble_rows: usize,
+        table: Table,
     ) -> Result<Metadata> {
-        // Parse the table with the best dialect
-        let max_rows = match self.sample_size {
-            SampleSize::Records(n) => n,
-            _ => 0,
-        };
-
-        let table = parse_table(data, &score.dialect, max_rows);
-
         if table.is_empty() {
             return Err(SnifferError::EmptyData);
         }
@@ -251,6 +243,7 @@ impl Sniffer {
             let mut et = crate::tum::table::Table::new();
             et.rows = table.rows[structural_preamble..].to_vec();
             et.field_counts = table.field_counts[structural_preamble..].to_vec();
+            et.update_modal_field_count();
             et
         } else {
             table.clone()
@@ -274,6 +267,7 @@ impl Sniffer {
             let mut dt = crate::tum::table::Table::new();
             dt.rows = effective_table.rows[1..].to_vec();
             dt.field_counts = effective_table.field_counts[1..].to_vec();
+            dt.update_modal_field_count();
             dt
         } else {
             effective_table
@@ -443,18 +437,30 @@ fn skip_preamble(data: &[u8]) -> (usize, &[u8]) {
 /// Identifies rows at the start that don't match the predominant field count
 /// pattern (metadata rows, empty rows, title rows with different structure).
 fn detect_structural_preamble(table: &crate::tum::table::Table) -> usize {
-    if table.field_counts.len() < 3 {
+    let n = table.field_counts.len();
+    if n < 3 {
         return 0;
     }
 
     let modal_count = table.modal_field_count();
 
+    // Pre-compute suffix counts: for each position i, how many rows from i to end match modal_count
+    // This converts O(n²) scanning to O(n) preprocessing + O(1) lookups
+    let mut matching_suffix = vec![0usize; n];
+    let mut count = 0;
+    for i in (0..n).rev() {
+        if table.field_counts[i] == modal_count {
+            count += 1;
+        }
+        matching_suffix[i] = count;
+    }
+
     // Find first row where remaining data is 80%+ consistent with modal field count
     for (i, &field_count) in table.field_counts.iter().enumerate() {
         if field_count == modal_count {
-            let remaining = &table.field_counts[i..];
-            let matching = remaining.iter().filter(|&&fc| fc == modal_count).count();
-            let consistency = matching as f64 / remaining.len() as f64;
+            let remaining_len = n - i;
+            let matching = matching_suffix[i];
+            let consistency = matching as f64 / remaining_len as f64;
 
             if consistency >= 0.8 {
                 return i;
@@ -634,6 +640,7 @@ mod tests {
             vec!["4".to_string(), "5".to_string(), "6".to_string()],
         ];
         table.field_counts = vec![1, 2, 3, 3, 3];
+        table.update_modal_field_count();
         assert_eq!(detect_structural_preamble(&table), 2);
 
         // Table with no preamble (uniform field counts)
@@ -643,12 +650,14 @@ mod tests {
             vec!["1".to_string(), "2".to_string(), "3".to_string()],
         ];
         table.field_counts = vec![3, 3];
+        table.update_modal_field_count();
         assert_eq!(detect_structural_preamble(&table), 0);
 
         // Table too small to determine preamble
         let mut table = Table::new();
         table.rows = vec![vec!["A".to_string()]];
         table.field_counts = vec![1];
+        table.update_modal_field_count();
         assert_eq!(detect_structural_preamble(&table), 0);
     }
 }
