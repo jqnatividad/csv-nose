@@ -126,6 +126,8 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 | CSV Wrangling CODEC | 92.96%   | 97.18%         |
 | CSV Wrangling MESSY | 92.06%   | 96.03%         |
 
+> NOTE: See [PERFORMANCE.md](PERFORMANCE.md) for details on accuracy breakdowns and known limitations.
+
 ### Benchmark Setup
 
 The benchmark test files are not included in this repository. To run benchmarks, first clone [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) and copy the test files:
