@@ -52,7 +52,7 @@ impl Default for Sniffer {
 
 impl Sniffer {
     /// Create a new Sniffer with default settings.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             sample_size: SampleSize::Records(100),
             date_preference: DatePreference::MdyFormat,
@@ -179,7 +179,7 @@ impl Sniffer {
         )
     }
 
-    /// Read a sample of data from the reader based on sample_size settings.
+    /// Read a sample of data from the reader based on `sample_size` settings.
     fn read_sample<R: Read + Seek>(&self, mut reader: R) -> Result<Vec<u8>> {
         match self.sample_size {
             SampleSize::Bytes(n) => {
@@ -276,7 +276,7 @@ impl Sniffer {
             dt.field_counts = effective_table.field_counts[1..].to_vec();
             dt
         } else {
-            effective_table.clone()
+            effective_table
         };
 
         // Infer types for each column
@@ -389,7 +389,7 @@ fn detect_header(
 }
 
 /// Calculate average record length.
-fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
+const fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
     if num_rows == 0 {
         return 0;
     }

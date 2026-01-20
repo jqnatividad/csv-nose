@@ -18,7 +18,7 @@ pub struct Metadata {
 
 impl Metadata {
     /// Create a new Metadata instance.
-    pub fn new(
+    pub const fn new(
         dialect: Dialect,
         avg_record_len: usize,
         num_fields: usize,
@@ -64,7 +64,13 @@ impl Default for Dialect {
 
 impl Dialect {
     /// Create a new Dialect with the given parameters.
-    pub fn new(delimiter: u8, header: Header, quote: Quote, flexible: bool, is_utf8: bool) -> Self {
+    pub const fn new(
+        delimiter: u8,
+        header: Header,
+        quote: Quote,
+        flexible: bool,
+        is_utf8: bool,
+    ) -> Self {
         Self {
             delimiter,
             header,
@@ -86,7 +92,7 @@ pub struct Header {
 
 impl Header {
     /// Create a new Header configuration.
-    pub fn new(has_header_row: bool, num_preamble_rows: usize) -> Self {
+    pub const fn new(has_header_row: bool, num_preamble_rows: usize) -> Self {
         Self {
             has_header_row,
             num_preamble_rows,

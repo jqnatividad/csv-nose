@@ -1,15 +1,15 @@
-//! Table uniformity calculations (tau_0, tau_1).
+//! Table uniformity calculations (`tau_0`, `tau_1`).
 //!
 //! These metrics measure how uniform a parsed CSV table is:
-//! - tau_0 (consistency): measures if all rows have the same number of fields
-//! - tau_1 (dispersion): measures the variability of field counts
+//! - `tau_0` (consistency): measures if all rows have the same number of fields
+//! - `tau_1` (dispersion): measures the variability of field counts
 
 use super::table::Table;
 
-/// Calculate tau_0 (consistency score).
+/// Calculate `tau_0` (consistency score).
 ///
 /// This measures how consistent the field counts are across rows.
-/// Formula: tau_0 = 1 / (1 + 2 * sigma)
+/// Formula: `tau_0` = 1 / (1 + 2 * sigma)
 /// where sigma is the standard deviation of field counts.
 ///
 /// Returns a value between 0 and 1, where 1 means perfect consistency.
@@ -21,10 +21,11 @@ pub fn calculate_tau_0(table: &Table) -> f64 {
     let sigma = standard_deviation(&table.field_counts);
 
     // tau_0 = 1 / (1 + 2 * sigma)
-    1.0 / (1.0 + 2.0 * sigma)
+    // 1.0 / (1.0 + 2.0 * sigma)
+    1.0 / 2.0f64.mul_add(sigma, 1.0)
 }
 
-/// Calculate tau_1 (dispersion score).
+/// Calculate `tau_1` (dispersion score).
 ///
 /// This measures the variability in field counts using multiple factors:
 /// - Range of field counts
@@ -69,12 +70,13 @@ pub fn calculate_tau_1(table: &Table) -> f64 {
 
     // Combine components with weights
     // Range and mode are most important, transitions provide additional signal
-    range_score * 0.3 + transition_score * 0.3 + mode_score * 0.4
+    // range_score * 0.3 + transition_score * 0.3 + mode_score * 0.4
+    mode_score.mul_add(0.4, range_score * 0.3 + transition_score * 0.3)
 }
 
 /// Calculate the combined uniformity score.
 ///
-/// This combines tau_0 and tau_1 into a single uniformity measure.
+/// This combines `tau_0` and `tau_1` into a single uniformity measure.
 #[allow(dead_code)]
 pub fn calculate_uniformity(table: &Table) -> f64 {
     let tau_0 = calculate_tau_0(table);

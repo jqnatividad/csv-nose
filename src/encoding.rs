@@ -1,4 +1,4 @@
-//! Encoding detection and transcoding using chardetng and encoding_rs.
+//! Encoding detection and transcoding using chardetng and `encoding_rs`.
 
 use chardetng::EncodingDetector;
 use simdutf8::basic::from_utf8;
@@ -46,8 +46,8 @@ pub struct EncodingInfo {
 }
 
 impl EncodingInfo {
-    /// Create a new EncodingInfo.
-    pub fn new(is_utf8: bool, has_bom: bool) -> Self {
+    /// Create a new `EncodingInfo`.
+    pub const fn new(is_utf8: bool, has_bom: bool) -> Self {
         Self { is_utf8, has_bom }
     }
 }
@@ -62,7 +62,7 @@ impl EncodingInfo {
 /// - UTF-16 LE/BE
 /// - And many more
 ///
-/// Returns (transcoded_data, was_transcoded). If was_transcoded is false,
+/// Returns (`transcoded_data`, `was_transcoded`). If `was_transcoded` is false,
 /// the original data is returned as-is (it was already valid UTF-8).
 pub fn detect_and_transcode(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, bool) {
     // Check for UTF-16 BOM first (chardetng doesn't handle these well)

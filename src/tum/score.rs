@@ -69,7 +69,7 @@ impl DialectScore {
     }
 
     /// Create a zero score (for failed parses).
-    pub fn zero(dialect: PotentialDialect) -> Self {
+    pub const fn zero(dialect: PotentialDialect) -> Self {
         Self {
             dialect,
             gamma: 0.0,
@@ -163,8 +163,11 @@ fn compute_gamma(
     };
 
     // Combine all factors
-    let raw_score =
-        uniformity_score * 0.5 + type_contribution + pattern_contribution + row_bonus + field_bonus;
+    // uniformity_score * 0.5 + type_contribution + pattern_contribution + row_bonus + field_bonus;
+    let raw_score = uniformity_score.mul_add(0.5, type_contribution)
+        + pattern_contribution
+        + row_bonus
+        + field_bonus;
 
     raw_score * single_field_penalty * high_field_penalty * delimiter_penalty * small_sample_penalty
 }
@@ -325,7 +328,7 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
 
 /// Returns a priority score for delimiters (higher = preferred).
 /// Common delimiters like comma are preferred over rare ones like space or &.
-fn delimiter_priority(delimiter: u8) -> u8 {
+const fn delimiter_priority(delimiter: u8) -> u8 {
     match delimiter {
         b',' => 10, // Comma - most common, highest priority
         b';' => 9,  // Semicolon - common in European locales
@@ -345,7 +348,7 @@ fn delimiter_priority(delimiter: u8) -> u8 {
 
 /// Returns a priority score for quote characters (higher = preferred).
 /// Double-quote is the standard default and should be preferred.
-fn quote_priority(quote: crate::metadata::Quote) -> u8 {
+const fn quote_priority(quote: crate::metadata::Quote) -> u8 {
     use crate::metadata::Quote;
     match quote {
         Quote::Some(b'"') => 3,  // Standard default - highest priority

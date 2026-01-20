@@ -13,7 +13,7 @@ pub enum Type {
     Boolean,
     /// Date value (without time component).
     Date,
-    /// DateTime value (date with time component).
+    /// `DateTime` value (date with time component).
     DateTime,
     /// Null/empty value.
     NULL,
@@ -50,7 +50,7 @@ impl Type {
 
     /// Returns the type priority for type inference.
     /// Higher priority types are preferred when merging types.
-    pub fn priority(&self) -> u8 {
+    pub const fn priority(&self) -> u8 {
         match self {
             Type::NULL => 0,
             Type::Boolean => 1,

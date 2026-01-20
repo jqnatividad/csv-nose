@@ -15,7 +15,7 @@ pub struct PotentialDialect {
 
 impl PotentialDialect {
     /// Create a new potential dialect.
-    pub fn new(delimiter: u8, quote: Quote, line_terminator: LineTerminator) -> Self {
+    pub const fn new(delimiter: u8, quote: Quote, line_terminator: LineTerminator) -> Self {
         Self {
             delimiter,
             quote,
@@ -39,7 +39,7 @@ pub enum LineTerminator {
 impl LineTerminator {
     /// Returns the byte sequence for this line terminator.
     #[allow(dead_code)]
-    pub fn as_bytes(&self) -> &'static [u8] {
+    pub const fn as_bytes(&self) -> &'static [u8] {
         match self {
             LineTerminator::LF => b"\n",
             LineTerminator::CRLF => b"\r\n",
@@ -49,7 +49,7 @@ impl LineTerminator {
 
     /// Returns the string representation.
     #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
+    pub const fn as_str(&self) -> &'static str {
         match self {
             LineTerminator::LF => "\\n",
             LineTerminator::CRLF => "\\r\\n",

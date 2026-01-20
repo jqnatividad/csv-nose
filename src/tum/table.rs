@@ -15,7 +15,7 @@ pub struct Table {
 
 impl Table {
     /// Create a new empty table.
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             rows: Vec::new(),
             field_counts: Vec::new(),
