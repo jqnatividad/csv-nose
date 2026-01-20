@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-01-20
+
+### Fixed
+
+- `avg_record_len` was always ~1024 bytes regardless of actual record size. Now correctly
+  calculates from parsed table data (sum of field lengths plus delimiter and line terminator overhead).
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.3.0...v0.3.1
+
 ## [0.3.0] - 2026-01-19
 
 ### Added
@@ -116,8 +125,3 @@ No change in detection accuracy.
 - ~94% accuracy on W3C-CSVW dataset
 - ~91% accuracy on CSV Wrangling dataset
 
-[Unreleased]: https://github.com/jqnatividad/csv-nose/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/jqnatividad/csv-nose/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/jqnatividad/csv-nose/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/jqnatividad/csv-nose/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/jqnatividad/csv-nose/releases/tag/v0.1.0

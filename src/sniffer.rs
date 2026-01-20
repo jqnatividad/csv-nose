@@ -692,8 +692,7 @@ mod tests {
         );
 
         // Test with longer fields to verify it scales with actual content
-        let long_data =
-            b"very_long_field_name,another_long_field_name\nvalue1,value2\nval3,val4\n";
+        let long_data = b"very_long_field_name,another_long_field_name\nvalue1,value2\nval3,val4\n";
         let metadata_long = sniffer.sniff_bytes(long_data).unwrap();
 
         // Longer fields should result in larger avg_record_len
