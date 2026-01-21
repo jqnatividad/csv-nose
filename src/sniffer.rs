@@ -385,13 +385,37 @@ fn detect_header(
 
 /// Calculate average record length from raw data.
 ///
-/// Uses raw byte length divided by row count for accurate results
+/// Uses the byte length of the first `num_rows` rows for accurate results
 /// that include quote characters and actual line terminators.
-const fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
+/// This handles the case where `data` contains more bytes than `num_rows` rows
+/// (e.g., when `SampleSize::Records(n)` reads more data than needed).
+fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
     if num_rows == 0 || data.is_empty() {
         return 0;
     }
-    data.len() / num_rows
+
+    // Find the byte offset where the num_rows-th row ends
+    // by counting newlines (handling both \n and \r\n)
+    let mut rows_seen = 0;
+    let mut byte_offset = 0;
+
+    for (i, &byte) in data.iter().enumerate() {
+        if byte == b'\n' {
+            rows_seen += 1;
+            if rows_seen >= num_rows {
+                byte_offset = i + 1; // Include the newline
+                break;
+            }
+        }
+    }
+
+    // If we didn't find enough newlines, use the entire data length
+    // (this handles files without trailing newlines or small files)
+    if byte_offset == 0 {
+        byte_offset = data.len();
+    }
+
+    byte_offset / num_rows
 }
 
 /// Skip preamble/comment lines at the start of data.
