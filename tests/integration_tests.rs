@@ -307,3 +307,49 @@ fn test_mixed_types_column() {
 
     assert_eq!(metadata.types[0], Type::Text);
 }
+
+/// Regression test for avg_record_len calculation with SampleSize::Records.
+///
+/// Previously, when using SampleSize::Records(n), the avg_record_len was always
+/// ~1024 bytes because the buffer size estimate (n * 1024) was divided by the
+/// parsed row count (n), regardless of actual record size.
+///
+/// This test uses a real-world CSV sample (NYC 311 data) to verify that
+/// avg_record_len reflects the actual average record size (~530 bytes),
+/// not the buffer estimate constant (1024 bytes).
+#[test]
+fn test_avg_record_len_regression_nyc_311() {
+    let fixture_path = std::path::Path::new("tests/data/fixtures/nyc_311_sample_200.csv");
+
+    // Skip test if fixture file doesn't exist
+    if !fixture_path.exists() {
+        eprintln!("Skipping test: fixture file not found at {:?}", fixture_path);
+        return;
+    }
+
+    let mut sniffer = Sniffer::new();
+    // Use default SampleSize::Records(100) which triggered the bug
+    sniffer.sample_size(SampleSize::Records(100));
+
+    let metadata = sniffer.sniff_path(fixture_path).unwrap();
+
+    // Verify basic detection
+    assert_eq!(metadata.dialect.delimiter, b',');
+    assert_eq!(metadata.dialect.quote, Quote::Some(b'"'));
+    assert!(metadata.dialect.header.has_header_row);
+    assert_eq!(metadata.num_fields, 41);
+
+    // THE KEY REGRESSION TEST:
+    // avg_record_len should be approximately 530 bytes (actual record size),
+    // NOT 1024 bytes (the old buggy value from buffer_size / row_count)
+    assert!(
+        metadata.avg_record_len < 700,
+        "avg_record_len should be ~530 bytes, not 1024. Got: {} bytes",
+        metadata.avg_record_len
+    );
+    assert!(
+        metadata.avg_record_len > 400,
+        "avg_record_len should be ~530 bytes, not too small. Got: {} bytes",
+        metadata.avg_record_len
+    );
+}
