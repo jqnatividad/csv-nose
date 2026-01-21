@@ -159,9 +159,9 @@ fn compute_gamma(
     // Penalty for very small samples (less reliable detection)
     let num_rows = table.num_rows();
     let small_sample_penalty = if num_rows < 3 {
-        0.70 // Very small - high unreliability
+        0.80 // Very small - high unreliability
     } else if num_rows < 5 {
-        0.85 // Small - moderate unreliability
+        0.90 // Small - moderate unreliability
     } else {
         1.0
     };
@@ -176,7 +176,7 @@ fn compute_gamma(
         b'^' | b'~' => 0.80,        // Rare delimiters
         b'#' => 0.60,               // Hash - often comment marker
         b'&' => 0.60,               // Ampersand - very rare
-        0xA7 => 0.70,               // Section sign (§) - rare delimiter
+        0xA7 => 0.78,               // Section sign (§) - rare but legitimate delimiter
         b'/' => 0.65,               // Forward slash - rare, often in paths/dates
         _ => 0.70,                  // Unknown - penalty
     };
@@ -220,8 +220,8 @@ fn score_dialect_with_counts(
 
     let mut score = DialectScore::new(dialect.clone(), &table);
 
-    // Apply quote evidence scoring using pre-computed counts
-    let quote_multiplier = quote_evidence_score_with_counts(quote_counts, dialect);
+    // Apply quote evidence scoring using pre-computed counts and raw data for boundary detection
+    let quote_multiplier = quote_evidence_score_with_data(data, quote_counts, dialect);
     score.gamma *= quote_multiplier;
 
     (score, table)
@@ -261,8 +261,8 @@ fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &Potent
     match dialect.quote {
         Quote::Some(b'"') => {
             if double_density >= min_density_threshold {
-                // Double quotes have significant density - slight boost
-                1.03
+                // Double quotes have significant density - boost
+                1.06
             } else {
                 // Neutral - rely on other scoring factors
                 1.0
@@ -271,12 +271,120 @@ fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &Potent
         Quote::Some(b'\'') => {
             // Single quotes are tricky because apostrophes are common in text
             // Only boost if single quotes dominate AND double quotes are absent
-            if single_density >= min_density_threshold * 2 && double_density < min_density_threshold
+            if double_density == 0 && single_density >= min_density_threshold {
+                // No double quotes at all - strong single-quote evidence
+                1.10
+            } else if single_density >= min_density_threshold * 2
+                && double_density < min_density_threshold
             {
                 // Strong evidence of single-quote usage
                 1.05
             } else if double_density >= min_density_threshold {
-                // Double quotes present but testing single - penalty
+                // Double quotes present but testing single - stronger penalty
+                0.92
+            } else {
+                1.0
+            }
+        }
+        Quote::None => {
+            // Only penalize Quote::None when there's strong quoting evidence
+            if double_density >= min_density_threshold {
+                0.90
+            } else {
+                1.0
+            }
+        }
+        Quote::Some(_) => 1.0, // Other quote chars - neutral
+    }
+}
+
+/// Check if quote characters appear at field boundaries (stronger evidence).
+/// Returns the count of boundary pairs found.
+fn quote_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
+    let mut boundary_pairs = 0;
+    for window in data.windows(2) {
+        // Quote after delimiter/newline (field start)
+        if (window[0] == delimiter || window[0] == b'\n' || window[0] == b'\r')
+            && window[1] == quote_char
+        {
+            boundary_pairs += 1;
+        }
+        // Quote before delimiter/newline (field end)
+        if window[0] == quote_char
+            && (window[1] == delimiter || window[1] == b'\n' || window[1] == b'\r')
+        {
+            boundary_pairs += 1;
+        }
+    }
+    // Also check start of data
+    if !data.is_empty() && data[0] == quote_char {
+        boundary_pairs += 1;
+    }
+    boundary_pairs
+}
+
+/// Calculate quote evidence score using pre-computed counts and raw data for boundary detection.
+/// This provides more accurate quote detection for small files.
+fn quote_evidence_score_with_data(
+    data: &[u8],
+    quote_counts: &QuoteCounts,
+    dialect: &PotentialDialect,
+) -> f64 {
+    use crate::metadata::Quote;
+
+    if quote_counts.data_len == 0 {
+        return 1.0;
+    }
+
+    // Calculate density (quotes per 1000 bytes) - higher density suggests quoting
+    let double_density = (quote_counts.double * 1000) / quote_counts.data_len;
+    let single_density = (quote_counts.single * 1000) / quote_counts.data_len;
+
+    // Threshold: need at least ~0.5% quote density to consider it significant
+    // This filters out incidental apostrophes in text
+    let min_density_threshold = 5; // 0.5% = 5 per 1000
+
+    match dialect.quote {
+        Quote::Some(b'"') => {
+            let boundary_count = quote_boundary_count(data, b'"', dialect.delimiter);
+            if quote_counts.single == 0 && boundary_count >= 2 {
+                // No single quotes AND double quotes at boundaries - very strong evidence
+                // This handles small files with quoted fields containing delimiters
+                2.2
+            } else if boundary_count >= 2 && double_density >= min_density_threshold {
+                // Double quotes at boundaries with good density
+                1.15
+            } else if double_density >= min_density_threshold {
+                // Double quotes have significant density - moderate boost
+                1.08
+            } else {
+                // Neutral - rely on other scoring factors
+                1.0
+            }
+        }
+        Quote::Some(b'\'') => {
+            // Single quotes are tricky because apostrophes are common in text
+            // MUST have boundary evidence - single quotes at field boundaries are the key signal
+            let boundary_count = quote_boundary_count(data, b'\'', dialect.delimiter);
+            if quote_counts.double == 0
+                && boundary_count >= 4
+                && single_density >= min_density_threshold * 2
+            {
+                // No double quotes, many single quote boundaries, high density
+                // This is strong evidence of single-quote quoting
+                2.2
+            } else if quote_counts.double == 0
+                && boundary_count >= 2
+                && single_density >= min_density_threshold
+            {
+                // No double quotes, some single quote boundaries, decent density
+                1.20
+            } else if double_density >= min_density_threshold {
+                // Double quotes present - penalize single-quote detection
+                0.90
+            } else if boundary_count == 0 && single_density > 0 {
+                // Single quotes present but not at boundaries - likely just text content
+                // Slight penalty to prefer double-quote as default
                 0.95
             } else {
                 1.0
@@ -332,7 +440,7 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
             }
         }
 
-        if score_ratio > 0.90 {
+        if score_ratio > 0.95 {
             // Scores are close, use delimiter priority first, then quote priority
             let a_delim_priority = delimiter_priority(a.dialect.delimiter);
             let b_delim_priority = delimiter_priority(b.dialect.delimiter);

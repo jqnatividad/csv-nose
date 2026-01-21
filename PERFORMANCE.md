@@ -8,11 +8,11 @@ Tested against standard CSV benchmark datasets:
 
 | Dataset | Success Rate | Notes |
 |---------|--------------|-------|
-| POLLOCK | 95.95% | General CSV files |
-| W3C-CSVW | 94.12% | W3C CSV on the Web test suite |
-| CSV Wrangling | 91.06% | Real-world messy CSVs |
-| CSV Wrangling CODEC | 90.85% | Filtered subset |
-| CSV Wrangling MESSY | 89.68% | Non-normal structures |
+| POLLOCK | 96.62% | General CSV files |
+| W3C-CSVW | 99.55% | W3C CSV on the Web test suite |
+| CSV Wrangling | 87.15% | Real-world messy CSVs |
+| CSV Wrangling CODEC | 86.62% | Filtered subset |
+| CSV Wrangling MESSY | 84.92% | Non-normal structures |
 
 ## Known Limitations
 
@@ -31,7 +31,7 @@ csv-nose is biased toward common delimiters (`,`, `;`, `\t`) to improve accuracy
 **Other rare delimiters**:
 - Ampersand (`&`): 0.60 penalty
 - Forward slash (`/`): 0.65 penalty
-- Section sign (`§`): 0.70 penalty
+- Section sign (`§`): 0.78 penalty
 - Caret (`^`) and tilde (`~`): 0.80 penalty
 - Colon (`:`): 0.90 penalty (often appears in timestamps)
 
@@ -47,9 +47,11 @@ let metadata = Sniffer::new()
 ### Quote Character Detection
 
 **Single-quote vs double-quote**:
-- Single quotes require 2x the density threshold to be detected (to avoid false positives from apostrophes in text like "John's")
-- When double quotes are present, single-quote dialects receive a 0.95 penalty
-- Examples: `Auto_Tone_sub315_day1.csv`, `currencies.csv`, `isco.csv`
+- Quote detection now uses boundary analysis - quotes must appear at field boundaries (after delimiter/newline or before delimiter/newline) to receive a boost
+- Single quotes require boundary evidence AND no double quotes present to be detected
+- Single quotes appearing only within text content (not at boundaries) receive a 0.95 penalty
+- When double quotes are present, single-quote dialects receive a 0.90 penalty
+- Examples of challenging files: `Auto_Tone_sub315_day1.csv`, `currencies.csv`, `isco.csv`
 
 **Quote::None when quotes exist**:
 - When double quotes have ≥0.5% density, `Quote::None` receives a 0.90 penalty
@@ -70,8 +72,8 @@ Files with few rows have less reliable detection:
 
 | Rows | Penalty |
 |------|---------|
-| < 3 | 0.70 |
-| 3-4 | 0.85 |
+| < 3 | 0.80 |
+| 3-4 | 0.90 |
 | ≥ 5 | None |
 
 **Workaround**: Increase sample size or provide hints:
@@ -112,19 +114,26 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | `\|` | 0.98 | 7 |
 | `:` | 0.90 | 4 |
 | `^` `~` | 0.80 | 3 |
+| `§` | 0.78 | 2 |
 | ` ` (space) | 0.75 | 2 |
-| `§` `/` | 0.70, 0.65 | 2 |
+| `/` | 0.65 | 2 |
 | `#` `&` | 0.60 | 1 |
 
-When scores are within 10%, delimiter priority is used as a tiebreaker.
+When scores are within 5%, delimiter priority is used as a tiebreaker.
 
 ### Quote Evidence Scoring
 
+Quote detection uses boundary analysis (quotes appearing at field boundaries, e.g., after/before the delimiter or newline) for improved accuracy:
+
 | Condition | Multiplier |
 |-----------|------------|
-| Double quotes with ≥0.5% density | 1.03 boost |
-| Single quotes dominating (2x threshold), no double quotes | 1.05 boost |
-| Single quote dialect when double quotes present | 0.95 penalty |
+| Double quotes at boundaries, no single quotes | 2.20 boost |
+| Double quotes at boundaries with good density | 1.15 boost |
+| Double quotes with ≥0.5% density | 1.08 boost |
+| Single quotes at boundaries (≥4), no double quotes, high density | 2.20 boost |
+| Single quotes at boundaries (≥2), no double quotes | 1.20 boost |
+| Single quote dialect when double quotes present | 0.90 penalty |
+| Single quotes present but not at boundaries | 0.95 penalty |
 | Quote::None when double quotes have ≥0.5% density | 0.90 penalty |
 
 ## Workarounds Summary

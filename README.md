@@ -138,10 +138,10 @@ The table below shows the dialect detection success ratio. Accuracy is measured 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
 | POLLOCK  | **96.62%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
-| W3C-CSVW | **93.21%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
-| CSV Wrangling | **91.06%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
-| CSV Wrangling CODEC | **90.85%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
-| CSV Wrangling MESSY | **89.68%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
+| W3C-CSVW | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| CSV Wrangling | **87.15%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
+| CSV Wrangling CODEC | **86.62%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
+| CSV Wrangling MESSY | **84.92%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
 
 ### Failure Ratio
 
@@ -164,10 +164,10 @@ The F1 score is the harmonic mean of precision and recall, providing a balanced 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
 | POLLOCK  | **0.966**  | 0.976              | 0.972        | 0.965       | 0.943         | 0.904              |
-| W3C-CSVW | **0.932**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
-| CSV Wrangling | **0.911** | 0.950             | 0.945        | 0.935       | 0.724         | 0.956              |
-| CSV Wrangling CODEC | **0.908** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
-| CSV Wrangling MESSY | **0.897** | 0.943       | 0.943        | 0.943       | 0.705         | 0.956              |
+| W3C-CSVW | **0.995**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
+| CSV Wrangling | **0.872** | 0.950             | 0.945        | 0.935       | 0.724         | 0.956              |
+| CSV Wrangling CODEC | **0.866** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
+| CSV Wrangling MESSY | **0.849** | 0.943       | 0.943        | 0.943       | 0.705         | 0.956              |
 
 ### Component Accuracy
 
@@ -175,11 +175,11 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 
 | Data set | Delimiter Accuracy | Quote Accuracy |
 |:---------|:-------------------|:---------------|
-| POLLOCK  | 97.30%             | 98.65%         |
-| W3C-CSVW | 99.55%             | 93.67%         |
-| CSV Wrangling | 93.30%         | 97.21%         |
-| CSV Wrangling CODEC | 92.96%   | 97.18%         |
-| CSV Wrangling MESSY | 92.06%   | 96.83%         |
+| POLLOCK  | 96.62%             | 100.00%        |
+| W3C-CSVW | 99.55%             | 100.00%        |
+| CSV Wrangling | 89.94%         | 96.65%         |
+| CSV Wrangling CODEC | 89.44%   | 96.48%         |
+| CSV Wrangling MESSY | 88.10%   | 96.03%         |
 
 > NOTE: See [PERFORMANCE.md](PERFORMANCE.md) for details on accuracy breakdowns and known limitations.
 
