@@ -173,6 +173,7 @@ impl Sniffer {
             structural_preamble,
             total_preamble_rows,
             table_for_preamble,
+            data,
         )
     }
 
@@ -223,6 +224,7 @@ impl Sniffer {
     /// * `structural_preamble` - Number of structural preamble rows in the table (for row indexing)
     /// * `total_preamble_rows` - Total preamble rows including comments (for Header metadata)
     /// * `table` - Pre-parsed table to avoid redundant parsing
+    /// * `data` - Raw data bytes for accurate avg_record_len calculation
     fn build_metadata(
         &self,
         score: &DialectScore,
@@ -230,6 +232,7 @@ impl Sniffer {
         structural_preamble: usize,
         total_preamble_rows: usize,
         table: Table,
+        data: &[u8],
     ) -> Result<Metadata> {
         if table.is_empty() {
             return Err(SnifferError::EmptyData);
@@ -283,8 +286,8 @@ impl Sniffer {
             is_utf8,
         };
 
-        // Calculate average record length from the parsed table
-        let avg_record_len = calculate_avg_record_len(&table);
+        // Calculate average record length from the raw data
+        let avg_record_len = calculate_avg_record_len(data, table.num_rows());
 
         Ok(Metadata {
             dialect,
@@ -380,29 +383,15 @@ fn detect_header(
     Header::new(has_header, preamble_rows)
 }
 
-/// Calculate average record length from the parsed table.
+/// Calculate average record length from raw data.
 ///
-/// Calculates based on actual parsed content: sum of field lengths plus
-/// delimiters and line terminator overhead.
-fn calculate_avg_record_len(table: &crate::tum::table::Table) -> usize {
-    if table.num_rows() == 0 {
+/// Uses raw byte length divided by row count for accurate results
+/// that include quote characters and actual line terminators.
+const fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
+    if num_rows == 0 || data.is_empty() {
         return 0;
     }
-
-    let total_len: usize = table
-        .rows
-        .iter()
-        .map(|row| {
-            // Sum of all field lengths
-            let field_len: usize = row.iter().map(String::len).sum();
-            // Add delimiter overhead (one less than number of fields, each delimiter is 1 byte)
-            let delimiter_overhead = row.len().saturating_sub(1);
-            // Add ~2 bytes for line terminator (average of \n and \r\n)
-            field_len + delimiter_overhead + 2
-        })
-        .sum();
-
-    total_len / table.num_rows()
+    data.len() / num_rows
 }
 
 /// Skip preamble/comment lines at the start of data.
@@ -678,29 +667,23 @@ mod tests {
 
     #[test]
     fn test_avg_record_len_calculated_from_data() {
-        // Test that avg_record_len is calculated from actual data, not hardcoded
+        // Test that avg_record_len uses raw bytes, not parsed content
         let short_data = b"a,b\n1,2\n3,4\n";
         let sniffer = Sniffer::new();
         let metadata = sniffer.sniff_bytes(short_data).unwrap();
 
-        // Each row: 2 fields of 1 char each + 1 delimiter + 2 line terminator estimate = 5 bytes
-        // Should be small, definitely NOT the old hardcoded 1024
-        assert!(
-            metadata.avg_record_len < 100,
-            "avg_record_len should be small for short records, got {}",
-            metadata.avg_record_len
-        );
+        // Each row: "a,b\n" = 4 bytes, "1,2\n" = 4 bytes, "3,4\n" = 4 bytes
+        // Average: 12 / 3 = 4 bytes
+        assert_eq!(metadata.avg_record_len, 4);
+    }
 
-        // Test with longer fields to verify it scales with actual content
-        let long_data = b"very_long_field_name,another_long_field_name\nvalue1,value2\nval3,val4\n";
-        let metadata_long = sniffer.sniff_bytes(long_data).unwrap();
+    #[test]
+    fn test_avg_record_len_with_quoted_fields() {
+        let quoted_data = b"\"hello\",\"world\"\n\"foo\",\"bar\"\n";
+        let sniffer = Sniffer::new();
+        let metadata = sniffer.sniff_bytes(quoted_data).unwrap();
 
-        // Longer fields should result in larger avg_record_len
-        assert!(
-            metadata_long.avg_record_len > metadata.avg_record_len,
-            "longer fields should have larger avg_record_len: short={}, long={}",
-            metadata.avg_record_len,
-            metadata_long.avg_record_len
-        );
+        // Raw: 16 + 12 = 28 bytes for 2 rows = 14 bytes avg
+        assert_eq!(metadata.avg_record_len, 14);
     }
 }
