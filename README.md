@@ -129,7 +129,7 @@ sniffer
 
 ## Benchmarks
 
-csv-nose is benchmarked against the same test datasets used by [CSVsniffer](https://github.com/ws-garcia/CSVsniffer), enabling direct accuracy comparison with other CSV dialect detection tools.
+csv-nose is benchmarked against the [same test datasets](docs/BENCHMARK_DATASETS_INFO.md) used by [CSVsniffer](https://github.com/ws-garcia/CSVsniffer), enabling direct accuracy comparison with other CSV dialect detection tools.
 
 ### Success Ratio
 
@@ -181,7 +181,7 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 | CSV Wrangling CODEC | 89.44%   | 96.48%         |
 | CSV Wrangling MESSY | 88.10%   | 96.03%         |
 
-> NOTE: See [PERFORMANCE.md](PERFORMANCE.md) for details on accuracy breakdowns and known limitations.
+> NOTE: See [PERFORMANCE.md](docs/PERFORMANCE.mdPERFORMANCE.md) for details on accuracy breakdowns and known limitations.
 
 ### Benchmark Setup
 
