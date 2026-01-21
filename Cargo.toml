@@ -1,9 +1,9 @@
 [package]
 name = "csv-nose"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 authors = ["Joel Natividad <joel@datHere.com>"]
-description = "CSV dialect sniffer using the Table Uniformity Method - a drop-in replacement for qsv-sniffer"
+description = "CSV dialect sniffer using the Table Uniformity Method"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jqnatividad/csv-nose"
 keywords = ["csv", "sniffer", "dialect", "detection"]

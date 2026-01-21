@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-21
+
+### Added
+
+- `BENCHMARK_DATASETS_INFO.md` documenting benchmark dataset characteristics and implications for detection
+- Regression test with NYC 311 sample data (`tests/data/fixtures/nyc_311_sample_200.csv`) to prevent
+  future `avg_record_len` calculation bugs
+
+### Changed
+
+- Quote detection now uses boundary analysis - quotes must appear at field boundaries (after delimiter/newline
+  or before delimiter/newline) to receive a boost, improving accuracy for standardized files
+- Tightened tiebreaker threshold from 90% to 95% for delimiter/quote priority decisions
+- Reduced small sample penalties (< 3 rows: 0.80 instead of 0.70; 3-4 rows: 0.90 instead of 0.85)
+- Increased section sign (`§`) delimiter factor from 0.70 to 0.78 (rare but legitimate delimiter)
+- Increased double-quote density boost from 1.03 to 1.06/1.08/1.15/2.2 based on boundary evidence
+
+### Fixed
+
+- Quote boundary detection now uses the dialect's actual delimiter instead of hardcoded values
+- `avg_record_len` now correctly calculates using only the bytes consumed
+  by parsed rows, not the entire sample buffer. `SampleSize::Records(n)` was always producing ~1024
+  bytes because the buffer size estimate (`n * 1024`) was divided by the parsed row count (`n`)
+
+### Performance
+
+Significant improvement for standardized CSV files (W3C-CSVW +6.34%), with tradeoff on real-world
+messy files (CSV Wrangling datasets -3.9% to -4.8%).
+
+| Dataset | v0.3.x | v0.4.0 | Change |
+|:--------|:-------|:-------|:-------|
+| POLLOCK | 96.62% | 96.62% | — |
+| W3C-CSVW | 93.21% | 99.55% | +6.34% |
+| CSV Wrangling | 91.06% | 87.15% | -3.91% |
+| CSV Wrangling CODEC | 90.85% | 86.62% | -4.23% |
+| CSV Wrangling MESSY | 89.68% | 84.92% | -4.76% |
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.3.1...v0.4.0
+
 ## [0.3.1] - 2026-01-20
 
 ### Fixed
