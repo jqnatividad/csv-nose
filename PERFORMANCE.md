@@ -9,10 +9,10 @@ Tested against standard CSV benchmark datasets:
 | Dataset | Success Rate | Notes |
 |---------|--------------|-------|
 | POLLOCK | 96.62% | General CSV files |
-| W3C-CSVW | 99.10% | W3C CSV on the Web test suite |
-| CSV Wrangling | 89.94% | Real-world messy CSVs |
-| CSV Wrangling CODEC | 89.44% | Filtered subset |
-| CSV Wrangling MESSY | 88.10% | Non-normal structures |
+| W3C-CSVW | 99.55% | W3C CSV on the Web test suite |
+| CSV Wrangling | 87.15% | Real-world messy CSVs |
+| CSV Wrangling CODEC | 86.62% | Filtered subset |
+| CSV Wrangling MESSY | 84.92% | Non-normal structures |
 
 ## Known Limitations
 
@@ -47,7 +47,7 @@ let metadata = Sniffer::new()
 ### Quote Character Detection
 
 **Single-quote vs double-quote**:
-- Quote detection now uses boundary analysis - quotes must appear at field boundaries (after `,`/`\n` or before `,`/`\n`) to receive a boost
+- Quote detection now uses boundary analysis - quotes must appear at field boundaries (after delimiter/newline or before delimiter/newline) to receive a boost
 - Single quotes require boundary evidence AND no double quotes present to be detected
 - Single quotes appearing only within text content (not at boundaries) receive a 0.95 penalty
 - When double quotes are present, single-quote dialects receive a 0.90 penalty
@@ -119,11 +119,11 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | `/` | 0.65 | 2 |
 | `#` `&` | 0.60 | 1 |
 
-When scores are within 10%, delimiter priority is used as a tiebreaker.
+When scores are within 5%, delimiter priority is used as a tiebreaker.
 
 ### Quote Evidence Scoring
 
-Quote detection uses boundary analysis (quotes appearing at field boundaries like `,'` or `',`) for improved accuracy:
+Quote detection uses boundary analysis (quotes appearing at field boundaries, e.g., after/before the delimiter or newline) for improved accuracy:
 
 | Condition | Multiplier |
 |-----------|------------|

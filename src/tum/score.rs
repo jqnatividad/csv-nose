@@ -300,18 +300,18 @@ fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &Potent
 
 /// Check if quote characters appear at field boundaries (stronger evidence).
 /// Returns the count of boundary pairs found.
-fn quote_boundary_count(data: &[u8], quote_char: u8) -> usize {
+fn quote_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
     let mut boundary_pairs = 0;
     for window in data.windows(2) {
         // Quote after delimiter/newline (field start)
-        if (window[0] == b',' || window[0] == b'\n' || window[0] == b'\r')
+        if (window[0] == delimiter || window[0] == b'\n' || window[0] == b'\r')
             && window[1] == quote_char
         {
             boundary_pairs += 1;
         }
         // Quote before delimiter/newline (field end)
         if window[0] == quote_char
-            && (window[1] == b',' || window[1] == b'\n' || window[1] == b'\r')
+            && (window[1] == delimiter || window[1] == b'\n' || window[1] == b'\r')
         {
             boundary_pairs += 1;
         }
@@ -346,7 +346,7 @@ fn quote_evidence_score_with_data(
 
     match dialect.quote {
         Quote::Some(b'"') => {
-            let boundary_count = quote_boundary_count(data, b'"');
+            let boundary_count = quote_boundary_count(data, b'"', dialect.delimiter);
             if quote_counts.single == 0 && boundary_count >= 2 {
                 // No single quotes AND double quotes at boundaries - very strong evidence
                 // This handles small files with quoted fields containing delimiters
@@ -365,7 +365,7 @@ fn quote_evidence_score_with_data(
         Quote::Some(b'\'') => {
             // Single quotes are tricky because apostrophes are common in text
             // MUST have boundary evidence - single quotes at field boundaries are the key signal
-            let boundary_count = quote_boundary_count(data, b'\'');
+            let boundary_count = quote_boundary_count(data, b'\'', dialect.delimiter);
             if quote_counts.double == 0
                 && boundary_count >= 4
                 && single_density >= min_density_threshold * 2
