@@ -323,7 +323,10 @@ fn test_avg_record_len_regression_nyc_311() {
 
     // Skip test if fixture file doesn't exist
     if !fixture_path.exists() {
-        eprintln!("Skipping test: fixture file not found at {:?}", fixture_path);
+        eprintln!(
+            "Skipping test: fixture file not found at {:?}",
+            fixture_path
+        );
         return;
     }
 
