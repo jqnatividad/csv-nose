@@ -114,7 +114,7 @@ File: /tmp/NYC_311_SR_2010-2020-sample-1M.csv
 
 ## API Compatibility
 
-This library is designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) used by [qsv](https://github.com/jqnatividad/qsv). The public API mirrors qsv-sniffer for easy migration:
+This library is designed as a drop-in replacement for [qsv-sniffer](https://github.com/jqnatividad/qsv-sniffer) used by [qsv](https://github.com/dathere/qsv). The public API mirrors qsv-sniffer for easy migration:
 
 ```rust
 use csv_nose::{Sniffer, Metadata, Dialect, Header, Quote, Type, SampleSize, DatePreference};
