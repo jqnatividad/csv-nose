@@ -1,5 +1,7 @@
 # Performance and Known Limitations
 
+> **Note:** This document reflects csv-nose v0.4.0.
+
 This document describes cases where csv-nose may not correctly detect CSV dialects, helping you understand when to use manual overrides.
 
 ## Accuracy Summary
