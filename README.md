@@ -67,7 +67,7 @@ File: /tmp/NYC_311_SR_2010-2020-sample-1M.csv
   Flexible: false
   UTF-8: true
   Fields: 41
-  Avg record length: 1024 bytes
+  Avg record length: 547 bytes
   Field details:
     1: Unique Key (Unsigned)
     2: Created Date (DateTime)
