@@ -138,10 +138,12 @@ The table below shows the dialect detection success ratio. Accuracy is measured 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
 | POLLOCK  | **96.62%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
-| W3C-CSVW | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| W3C-CSVW[^1] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
 | CSV Wrangling | **87.15%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
 | CSV Wrangling CODEC | **86.62%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
 | CSV Wrangling MESSY | **84.92%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
+
+[^1]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
 
 ### Failure Ratio
 
