@@ -306,6 +306,34 @@ fn print_text_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
     println!();
 }
 
+/// Escape a string for JSON output (handles quotes, backslashes, and control characters).
+fn escape_json(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            c if c.is_control() => {
+                result.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => result.push(c),
+        }
+    }
+    result
+}
+
+/// Escape a string for CSV output (quotes the value and doubles internal quotes).
+fn escape_csv(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
 fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
     let quote_str = match metadata.dialect.quote {
         Quote::None => "null".to_string(),
@@ -314,7 +342,7 @@ fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
 
     print!(
         r#"{{"file":"{}","dialect":{{"delimiter":"{}","quote":{},"has_header":{},"preamble_rows":{},"flexible":{},"is_utf8":{}}},"num_fields":{},"avg_record_len":{}"#,
-        path,
+        escape_json(path),
         metadata.dialect.delimiter as char,
         quote_str,
         metadata.dialect.header.has_header_row,
@@ -336,7 +364,11 @@ fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
             if i > 0 {
                 print!(",");
             }
-            print!(r#"{{"name":"{name}","type":"{typ}"}}"#);
+            print!(
+                r#"{{"name":"{}","type":"{}"}}"#,
+                escape_json(name),
+                escape_json(&typ.to_string())
+            );
         }
         print!("]");
     }
@@ -364,7 +396,7 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
 
     println!(
         "{},{},{},{},{},{},{},{},{}",
-        path,
+        escape_csv(path),
         metadata.dialect.delimiter as char,
         quote_str,
         metadata.dialect.header.has_header_row,
