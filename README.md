@@ -16,7 +16,7 @@ This crate implements the algorithm from ["Detecting CSV File Dialects by Table 
 3. Scoring based on type detection (consistent data types within columns)
 4. Selecting the dialect with the highest combined gamma score
 
-[^1]: García W. Detecting CSV file dialects by table uniformity measurement and data type inference. Data Science. 2024;7(2):55-72. doi:10.3233/DS-240062
+[^1]: García W. Detecting CSV file dialects by table uniformity measurement and data type inference. Data Science. 2024;7(2):55-72. [doi:10.3233/DS-240062](https://doi.org/10.3233/DS-240062)
 
 ## Installation
 
