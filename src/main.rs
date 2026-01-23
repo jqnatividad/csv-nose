@@ -1,11 +1,13 @@
 //! csv-nose CLI - CSV dialect sniffer
 
 mod benchmark;
+#[cfg(feature = "http")]
+mod http;
 
 use benchmark::{find_annotations, run_benchmark};
 use clap::Parser;
 use csv_nose::{DatePreference, Quote, SampleSize, Sniffer};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 /// CSV dialect sniffer using the Table Uniformity Method.
@@ -16,9 +18,9 @@ use std::process::ExitCode;
 #[command(name = "csv-nose")]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Input CSV file(s) to sniff, or directory for benchmark mode
+    /// Input CSV file(s) or URL(s) to sniff, or directory for benchmark mode
     #[arg(required_unless_present = "benchmark")]
-    files: Vec<PathBuf>,
+    files: Vec<String>,
 
     /// Run benchmark mode on a directory of test files
     #[arg(long)]
@@ -83,13 +85,31 @@ fn main() -> ExitCode {
     let mut exit_code = ExitCode::SUCCESS;
 
     for file in &args.files {
-        if let Err(e) = sniff_file(file, &args) {
-            eprintln!("Error processing {}: {}", file.display(), e);
+        let result = if is_url(file) {
+            #[cfg(feature = "http")]
+            {
+                sniff_url(file, &args)
+            }
+            #[cfg(not(feature = "http"))]
+            {
+                Err("HTTP support not enabled. Rebuild with --features http".into())
+            }
+        } else {
+            sniff_file(&PathBuf::from(file), &args)
+        };
+
+        if let Err(e) = result {
+            eprintln!("Error processing {file}: {e}");
             exit_code = ExitCode::FAILURE;
         }
     }
 
     exit_code
+}
+
+/// Check if a path looks like a URL.
+fn is_url(path: &str) -> bool {
+    path.starts_with("http://") || path.starts_with("https://")
 }
 
 fn run_benchmark_cli(args: &Args) -> ExitCode {
@@ -98,7 +118,7 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let data_dir = &args.files[0];
+    let data_dir = PathBuf::from(&args.files[0]);
 
     if !data_dir.is_dir() {
         eprintln!("Error: {} is not a directory", data_dir.display());
@@ -108,7 +128,7 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
     // Find or use provided annotations file
     let annotations_path = if let Some(ref path) = args.annotations {
         path.clone()
-    } else if let Some(path) = find_annotations(data_dir) {
+    } else if let Some(path) = find_annotations(&data_dir) {
         path
     } else {
         eprintln!(
@@ -123,7 +143,7 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
     println!("Using annotations: {}", annotations_path.display());
     println!();
 
-    match run_benchmark(data_dir, &annotations_path) {
+    match run_benchmark(&data_dir, &annotations_path) {
         Ok(result) => {
             result.print_details();
             result.print_summary();
@@ -176,17 +196,77 @@ fn sniff_file(path: &PathBuf, args: &Args) -> Result<(), Box<dyn std::error::Err
         return Ok(());
     }
 
+    let display_path = path.display().to_string();
     match args.format {
-        OutputFormat::Text => print_text_output(path, &metadata, args.verbose),
-        OutputFormat::Json => print_json_output(path, &metadata, args.verbose),
-        OutputFormat::Csv => print_csv_output(path, &metadata),
+        OutputFormat::Text => print_text_output(&display_path, &metadata, args.verbose),
+        OutputFormat::Json => print_json_output(&display_path, &metadata, args.verbose),
+        OutputFormat::Csv => print_csv_output(&display_path, &metadata),
     }
 
     Ok(())
 }
 
-fn print_text_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) {
-    println!("File: {}", path.display());
+/// Sniff a remote CSV file from a URL using HTTP Range requests.
+#[cfg(feature = "http")]
+fn sniff_url(url: &str, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+    // Calculate max bytes to fetch
+    let max_bytes = if args.all {
+        None
+    } else if let Some(bytes) = args.sample_bytes {
+        Some(bytes)
+    } else {
+        // For record-based sampling, use a reasonable byte estimate
+        // (100 records * ~500 bytes per record = 50KB default)
+        Some(args.sample_records * 500)
+    };
+
+    // Fetch data from URL
+    let fetch_result = http::fetch_url(url, max_bytes)?;
+
+    let mut sniffer = Sniffer::new();
+
+    // For bytes data, we already limited the fetch, so use SampleSize::All
+    sniffer.sample_size(SampleSize::All);
+
+    // Configure date preference
+    if args.dmy {
+        sniffer.date_preference(DatePreference::DmyFormat);
+    }
+
+    // Configure forced delimiter
+    if let Some(delim) = args.delimiter {
+        sniffer.delimiter(delim as u8);
+    }
+
+    // Configure forced quote
+    if let Some(ref quote_str) = args.quote {
+        if quote_str.to_lowercase() == "none" {
+            sniffer.quote(Quote::None);
+        } else if let Some(c) = quote_str.chars().next() {
+            sniffer.quote(Quote::Some(c as u8));
+        }
+    }
+
+    // Sniff the fetched bytes
+    let metadata = sniffer.sniff_bytes(&fetch_result.data)?;
+
+    // Output based on format
+    if args.delimiter_only {
+        println!("{}", metadata.dialect.delimiter as char);
+        return Ok(());
+    }
+
+    match args.format {
+        OutputFormat::Text => print_text_output(url, &metadata, args.verbose),
+        OutputFormat::Json => print_json_output(url, &metadata, args.verbose),
+        OutputFormat::Csv => print_csv_output(url, &metadata),
+    }
+
+    Ok(())
+}
+
+fn print_text_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
+    println!("File: {path}");
     println!("  Delimiter: {:?}", metadata.dialect.delimiter as char);
     println!(
         "  Quote: {}",
@@ -220,7 +300,7 @@ fn print_text_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) 
     println!();
 }
 
-fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) {
+fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
     let quote_str = match metadata.dialect.quote {
         Quote::None => "null".to_string(),
         Quote::Some(q) => format!("\"{}\"", q as char),
@@ -228,7 +308,7 @@ fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) 
 
     print!(
         r#"{{"file":"{}","dialect":{{"delimiter":"{}","quote":{},"has_header":{},"preamble_rows":{},"flexible":{},"is_utf8":{}}},"num_fields":{},"avg_record_len":{}"#,
-        path.display(),
+        path,
         metadata.dialect.delimiter as char,
         quote_str,
         metadata.dialect.header.has_header_row,
@@ -258,7 +338,7 @@ fn print_json_output(path: &Path, metadata: &csv_nose::Metadata, verbose: bool) 
     println!("}}");
 }
 
-fn print_csv_output(path: &Path, metadata: &csv_nose::Metadata) {
+fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
     static mut HEADER_PRINTED: bool = false;
 
     let quote_str = match metadata.dialect.quote {
@@ -278,7 +358,7 @@ fn print_csv_output(path: &Path, metadata: &csv_nose::Metadata) {
 
     println!(
         "{},{},{},{},{},{},{},{},{}",
-        path.display(),
+        path,
         metadata.dialect.delimiter as char,
         quote_str,
         metadata.dialect.header.has_header_row,
