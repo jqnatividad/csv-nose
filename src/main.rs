@@ -118,6 +118,11 @@ fn run_benchmark_cli(args: &Args) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    if is_url(&args.files[0]) {
+        eprintln!("Error: benchmark mode requires a local directory, not a URL");
+        return ExitCode::FAILURE;
+    }
+
     let data_dir = PathBuf::from(&args.files[0]);
 
     if !data_dir.is_dir() {
@@ -215,8 +220,9 @@ fn sniff_url(url: &str, args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     } else if let Some(bytes) = args.sample_bytes {
         Some(bytes)
     } else {
-        // For record-based sampling, use a reasonable byte estimate
-        // (100 records * ~500 bytes per record = 50KB default)
+        // For record-based sampling, estimate bytes needed.
+        // 500 bytes/record is a reasonable middle ground based on typical CSVs.
+        // Users can override with -b/--sample-bytes for specific needs.
         Some(args.sample_records * 500)
     };
 

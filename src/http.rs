@@ -1,7 +1,11 @@
 //! HTTP Range request support for fetching remote CSV files.
 
 use std::io::Read;
+use std::time::Duration;
 use thiserror::Error;
+
+/// Default timeout for HTTP requests (30 seconds).
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Result of fetching a URL.
 pub struct FetchResult {
@@ -77,7 +81,12 @@ pub fn fetch_url(url: &str, max_bytes: Option<usize>) -> Result<FetchResult, Htt
 fn fetch_with_range(url: &str, bytes: usize) -> Result<FetchResult, HttpError> {
     let range_header = format!("bytes=0-{}", bytes.saturating_sub(1));
 
-    let response = ureq::get(url).header("Range", &range_header).call()?;
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(DEFAULT_TIMEOUT))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+
+    let response = agent.get(url).header("Range", &range_header).call()?;
 
     let status = response.status();
     let content_length = response
@@ -113,7 +122,12 @@ fn fetch_with_range(url: &str, bytes: usize) -> Result<FetchResult, HttpError> {
 
 /// Fetch the full content (or up to max_bytes if specified).
 fn fetch_full(url: &str, max_bytes: Option<usize>) -> Result<FetchResult, HttpError> {
-    let response = ureq::get(url).call()?;
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(DEFAULT_TIMEOUT))
+        .build();
+    let agent = ureq::Agent::new_with_config(config);
+
+    let response = agent.get(url).call()?;
 
     let content_length = response
         .headers()
