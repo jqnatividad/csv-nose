@@ -33,6 +33,12 @@ csv-nose = "0.4"
 cargo install csv-nose
 ```
 
+### With HTTP support (for remote URLs)
+
+```bash
+cargo install csv-nose --features http
+```
+
 ## Library Usage
 
 ```rust
@@ -57,6 +63,8 @@ csv-nose *.csv                       # Sniff multiple files
 csv-nose -f json data.csv            # Output as JSON
 csv-nose --delimiter-only data.csv   # Output only the delimiter
 csv-nose -v data.csv                 # Verbose output with field types
+csv-nose https://example.com/data.csv  # Sniff remote CSV (requires http feature)
+csv-nose local.csv https://example.com/remote.csv  # Mix local and remote
 ```
 
 ```bash
@@ -113,6 +121,23 @@ File: /tmp/NYC_311_SR_2010-2020-sample-1M.csv
     40: Longitude (Float)
     41: Location (Text)
 ```
+
+## Remote URL Support
+
+When built with the `http` feature, csv-nose can sniff remote CSV files directly from URLs:
+
+```bash
+# Build with HTTP support
+cargo build --release --features http
+
+# Sniff remote CSV
+csv-nose https://raw.githubusercontent.com/datasets/gdp/main/data/gdp.csv
+
+# Limit bytes fetched (useful for large remote files)
+csv-nose -b 8192 https://example.com/large.csv
+```
+
+The HTTP feature uses Range requests when supported by the server to minimize data transfer. If the server doesn't support Range requests, it falls back to downloading and truncating at the sample size limit.
 
 ## API Compatibility
 
