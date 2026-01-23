@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-22
+
+### Added
+
+- HTTP support for sniffing remote CSV files directly from URLs without downloading the entire file
+- New `http` feature flag with `ureq` dependency for HTTP Range request support
+- CLI can now accept URLs alongside local file paths (e.g., `csv-nose local.csv https://example.com/remote.csv`)
+- Efficient Range request handling: uses partial downloads when server supports it, falls back to
+  full download with truncation otherwise
+
+### Fixed
+
+- Properly escape paths and URLs in JSON and CSV output formats
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.4.0...v0.5.0
+
 ## [0.4.0] - 2026-01-21
 
 ### Added

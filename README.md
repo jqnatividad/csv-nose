@@ -24,7 +24,7 @@ This crate implements the algorithm from ["Detecting CSV File Dialects by Table 
 
 ```toml
 [dependencies]
-csv-nose = "0.4"
+csv-nose = "0.5"
 ```
 
 ### As a CLI tool
