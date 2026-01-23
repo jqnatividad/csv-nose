@@ -9,12 +9,14 @@ A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsni
 
 ## Background
 
-This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062) by [W. García](https://github.com/ws-garcia). The Table Uniformity Method achieves ~96% accuracy on real-world messy CSV files by:
+This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia). The Table Uniformity Method achieves ~96% accuracy on real-world messy CSV files by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
 3. Scoring based on type detection (consistent data types within columns)
 4. Selecting the dialect with the highest combined gamma score
+
+[^1]: García W. Detecting CSV file dialects by table uniformity measurement and data type inference. Data Science. 2024;7(2):55-72. doi:10.3233/DS-240062
 
 ## Installation
 
@@ -138,12 +140,12 @@ The table below shows the dialect detection success ratio. Accuracy is measured 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
 | POLLOCK  | **96.62%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
-| W3C-CSVW[^1] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| W3C-CSVW[^2] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
 | CSV Wrangling | **87.15%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
 | CSV Wrangling CODEC | **86.62%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
 | CSV Wrangling MESSY | **84.92%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
 
-[^1]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
+[^2]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
 
 ### Failure Ratio
 
