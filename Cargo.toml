@@ -22,6 +22,7 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 cli = ["clap"]
+http = ["ureq"]
 runtime-dispatch-simd = ["bytecount/runtime-dispatch-simd"]
 generic-simd = ["bytecount/generic-simd"]
 
@@ -31,9 +32,10 @@ clap = { version = "4.4", features = ["derive"], optional = true }
 regex = "1"
 simdutf8 = "0.1"
 thiserror = "2.0"
-bytecount = "0.6.9"
+bytecount = "0.6"
 chardetng = "0.1"
 encoding_rs = "0.8"
+ureq = { version = "3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
