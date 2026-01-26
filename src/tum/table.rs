@@ -42,7 +42,6 @@ impl Table {
     /// Returns the modal (most common) field count.
     /// Uses cached value computed during parsing for efficiency.
     #[inline]
-
     pub fn modal_field_count(&self) -> usize {
         self.cached_modal_field_count
     }
