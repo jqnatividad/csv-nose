@@ -4,7 +4,7 @@
 //! against the same test datasets used by CSVsniffer, enabling accuracy comparison.
 
 use csv_nose::{Metadata, Quote, Sniffer};
-use std::collections::HashMap;
+use foldhash::{HashMap, HashMapExt};
 use std::fs;
 use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
