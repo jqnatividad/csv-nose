@@ -203,7 +203,8 @@ impl BenchmarkResult {
 pub fn parse_annotations(path: &Path) -> io::Result<HashMap<String, ExpectedDialect>> {
     let file = fs::File::open(path)?;
     let reader = io::BufReader::new(file);
-    let mut annotations = HashMap::new();
+    // currently expecting around 250 annotations at most
+    let mut annotations = HashMap::with_capacity(250);
 
     for line in reader.lines() {
         let line = line?;
