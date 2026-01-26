@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 /// Expected dialect from annotation file.
 #[derive(Debug, Clone)]
-#[allow(unused)]
 pub struct ExpectedDialect {
     pub file_name: String,
     pub encoding: String,
