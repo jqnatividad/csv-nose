@@ -318,6 +318,7 @@ fn escape_json(s: &str) -> String {
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
             c if c.is_control() => {
+                // we use write! to avoid allocating a temporary string
                 let _ = write!(result, "\\u{:04x}", c as u32);
             }
             c => result.push(c),
