@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-26
+
+### Changed
+
+- Replaced `std::collections::HashMap` with `foldhash::HashMap` for faster hashing
+- Updated package description to credit @ws-garcia's Table Uniformity Method
+
+### Performance
+
+- Pre-allocate HashMap capacities to avoid reallocation during growth
+- Add `#[inline]` to Table accessor methods for better optimization
+- Pass Table by reference to avoid unnecessary cloning
+- Use `fmt::Write` instead of `format!()` to avoid temporary string allocations
+
+No change in detection accuracy - these are pure performance optimizations.
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.5.0...v0.6.0
+
 ## [0.5.0] - 2026-01-22
 
 ### Added
