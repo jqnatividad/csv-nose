@@ -172,7 +172,7 @@ impl Sniffer {
             is_utf8,
             structural_preamble,
             total_preamble_rows,
-            table_for_preamble,
+            &table_for_preamble,
             data,
         )
     }
@@ -231,7 +231,7 @@ impl Sniffer {
         is_utf8: bool,
         structural_preamble: usize,
         total_preamble_rows: usize,
-        table: Table,
+        table: &Table,
         data: &[u8],
     ) -> Result<Metadata> {
         if table.is_empty() {
