@@ -5,10 +5,6 @@
 
 use regex::Regex;
 
-/// Pattern for empty/null values.
-pub static EMPTY_PATTERN: std::sync::LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(r"^$").expect("Invalid empty pattern"));
-
 /// Pattern for NULL-like values.
 pub static NULL_PATTERN: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)^(null|nil|none|na|n/a|\?|nan|-|--|\.|\.\.|#n/a|#value!|#ref!|#div/0!)$")
@@ -127,11 +123,6 @@ pub struct PatternCategory {
 static PATTERN_CATEGORIES: std::sync::LazyLock<Vec<PatternCategory>> =
     std::sync::LazyLock::new(|| {
         vec![
-            PatternCategory {
-                pattern: &EMPTY_PATTERN,
-                category: "empty",
-                weight: 0.0,
-            },
             PatternCategory {
                 pattern: &NULL_PATTERN,
                 category: "null",

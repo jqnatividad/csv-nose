@@ -9,7 +9,7 @@ pub fn detect_cell_type(value: &str) -> Type {
     let trimmed = value.trim();
 
     // Check for empty first
-    if trimmed.is_empty() || EMPTY_PATTERN.is_match(trimmed) {
+    if trimmed.is_empty() {
         return Type::NULL;
     }
 
