@@ -2,6 +2,7 @@
 
 use super::potential_dialects::PotentialDialect;
 use crate::metadata::Quote;
+use foldhash::{HashMap, HashMapExt};
 use std::borrow::Cow;
 use std::io::{BufRead, Cursor};
 
@@ -49,7 +50,7 @@ impl Table {
             return 0;
         }
 
-        let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut counts: HashMap<usize, usize> = HashMap::new();
         for &fc in field_counts {
             *counts.entry(fc).or_insert(0) += 1;
         }

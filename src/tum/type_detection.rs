@@ -3,7 +3,7 @@
 use super::regexes::*;
 use super::table::Table;
 use crate::field_type::Type;
-use std::collections::HashMap;
+use foldhash::{HashMap, HashMapExt};
 
 /// Detect the type of a single cell value.
 pub fn detect_cell_type(value: &str) -> Type {
