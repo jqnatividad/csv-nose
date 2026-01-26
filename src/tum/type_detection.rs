@@ -3,7 +3,7 @@
 use super::regexes::*;
 use super::table::Table;
 use crate::field_type::Type;
-use std::collections::HashMap;
+use foldhash::{HashMap, HashMapExt};
 
 /// Detect the type of a single cell value.
 pub fn detect_cell_type(value: &str) -> Type {
@@ -99,7 +99,7 @@ pub fn calculate_type_score(table: &Table) -> f64 {
 
 /// Calculate type consistency for a single column.
 fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
-    let mut type_counts: HashMap<Type, usize> = HashMap::new();
+    let mut type_counts: HashMap<Type, usize> = HashMap::with_capacity(8);
     let mut total_cells = 0;
 
     for row in &table.rows {

@@ -7,6 +7,7 @@ mod http;
 use benchmark::{find_annotations, run_benchmark};
 use clap::Parser;
 use csv_nose::{DatePreference, Quote, SampleSize, Sniffer};
+use std::fmt::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -317,7 +318,8 @@ fn escape_json(s: &str) -> String {
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
             c if c.is_control() => {
-                result.push_str(&format!("\\u{:04x}", c as u32));
+                // we use write! to avoid allocating a temporary string
+                let _ = write!(result, "\\u{:04x}", c as u32);
             }
             c => result.push(c),
         }

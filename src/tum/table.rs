@@ -2,6 +2,7 @@
 
 use super::potential_dialects::PotentialDialect;
 use crate::metadata::Quote;
+use foldhash::{HashMap, HashMapExt};
 use std::borrow::Cow;
 use std::io::{BufRead, Cursor};
 
@@ -27,17 +28,20 @@ impl Table {
     }
 
     /// Returns true if the table is empty.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
     /// Returns the number of rows.
+    #[inline]
     pub fn num_rows(&self) -> usize {
         self.rows.len()
     }
 
     /// Returns the modal (most common) field count.
     /// Uses cached value computed during parsing for efficiency.
+    #[inline]
     pub fn modal_field_count(&self) -> usize {
         self.cached_modal_field_count
     }
@@ -49,7 +53,7 @@ impl Table {
             return 0;
         }
 
-        let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+        let mut counts: HashMap<usize, usize> = HashMap::with_capacity(field_counts.len());
         for &fc in field_counts {
             *counts.entry(fc).or_insert(0) += 1;
         }
@@ -70,11 +74,13 @@ impl Table {
     }
 
     /// Returns the minimum field count.
+    #[inline]
     pub fn min_field_count(&self) -> usize {
         self.field_counts.iter().copied().min().unwrap_or(0)
     }
 
     /// Returns the maximum field count.
+    #[inline]
     pub fn max_field_count(&self) -> usize {
         self.field_counts.iter().copied().max().unwrap_or(0)
     }
