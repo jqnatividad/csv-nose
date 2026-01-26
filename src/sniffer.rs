@@ -74,13 +74,13 @@ impl Sniffer {
     }
 
     /// Force a specific delimiter (skip delimiter detection).
-    pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
+    pub const fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.forced_delimiter = Some(delimiter);
         self
     }
 
     /// Force a specific quote character.
-    pub fn quote(&mut self, quote: Quote) -> &mut Self {
+    pub const fn quote(&mut self, quote: Quote) -> &mut Self {
         self.forced_quote = Some(quote);
         self
     }
@@ -127,22 +127,22 @@ impl Sniffer {
         let line_terminator = detect_line_terminator(data);
 
         // Generate potential dialects
-        let dialects = if let Some(delim) = self.forced_delimiter {
-            // If delimiter is forced, only test that delimiter with different quotes
-            let quotes = if let Some(q) = self.forced_quote {
-                vec![q]
-            } else {
-                vec![Quote::Some(b'"'), Quote::Some(b'\''), Quote::None]
-            };
+        let dialects = self.forced_delimiter.map_or_else(
+            || generate_dialects_with_terminator(line_terminator),
+            |delim| {
+                // If delimiter is forced, only test that delimiter with different quotes
+                let quotes = if let Some(q) = self.forced_quote {
+                    vec![q]
+                } else {
+                    vec![Quote::Some(b'"'), Quote::Some(b'\''), Quote::None]
+                };
 
-            quotes
-                .into_iter()
-                .map(|q| PotentialDialect::new(delim, q, line_terminator))
-                .collect()
-        } else {
-            generate_dialects_with_terminator(line_terminator)
-        };
-
+                quotes
+                    .into_iter()
+                    .map(|q| PotentialDialect::new(delim, q, line_terminator))
+                    .collect()
+            },
+        );
         // Determine max rows for scoring
         let max_rows = match self.sample_size {
             SampleSize::Records(n) => n,
