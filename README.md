@@ -9,7 +9,7 @@ A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsni
 
 ## Background
 
-This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia). This implementation of the Table Uniformity Method achieves 99.55% accuracy[^2] on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
+This crate implements the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia). This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
