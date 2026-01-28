@@ -28,7 +28,7 @@ generic-simd = ["bytecount/generic-simd"]
 
 [dependencies]
 csv = "1"
-clap = { version = "4.4", features = ["derive"], optional = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
 regex = "1"
 simdutf8 = "0.1"
 thiserror = "2.0"
