@@ -243,10 +243,7 @@ fn quote_evidence_score(data: &[u8], dialect: &PotentialDialect) -> f64 {
 
 /// Calculate quote evidence score using pre-computed quote counts.
 /// This avoids redundant byte counting when scoring multiple dialects.
-fn quote_evidence_score_with_counts(
-    quote_counts: &QuoteCounts,
-    dialect: &PotentialDialect,
-) -> f64 {
+fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &PotentialDialect) -> f64 {
     use crate::metadata::Quote;
 
     if quote_counts.data_len == 0 {
