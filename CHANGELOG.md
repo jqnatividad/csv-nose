@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-28
+
+### Changed
+
+- Bump `clap` from 4.5.54 to 4.5.55
+- Bump `actions/checkout` from 4 to 6 in CI workflow
+- Updated Dependabot config for Cargo and GitHub Actions
+
+### Performance
+
+- Optimize type detection by using array for type counts instead of HashMap
+- Make several methods `const` for improved compile-time optimization
+- Optimize hot paths for ~18-21% speedup in dialect detection
+
+No change in detection accuracy - these are pure performance optimizations.
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.6.0...v0.7.0
+
 ## [0.6.0] - 2026-01-26
 
 ### Changed
