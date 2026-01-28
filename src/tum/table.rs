@@ -29,20 +29,20 @@ impl Table {
 
     /// Returns true if the table is empty.
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
 
     /// Returns the number of rows.
     #[inline]
-    pub fn num_rows(&self) -> usize {
+    pub const fn num_rows(&self) -> usize {
         self.rows.len()
     }
 
     /// Returns the modal (most common) field count.
     /// Uses cached value computed during parsing for efficiency.
     #[inline]
-    pub fn modal_field_count(&self) -> usize {
+    pub const fn modal_field_count(&self) -> usize {
         self.cached_modal_field_count
     }
 

@@ -3,14 +3,13 @@
 use super::regexes::*;
 use super::table::Table;
 use crate::field_type::Type;
-use foldhash::{HashMap, HashMapExt};
 
 /// Detect the type of a single cell value.
 pub fn detect_cell_type(value: &str) -> Type {
     let trimmed = value.trim();
 
     // Check for empty first
-    if trimmed.is_empty() || EMPTY_PATTERN.is_match(trimmed) {
+    if trimmed.is_empty() {
         return Type::NULL;
     }
 
@@ -99,13 +98,13 @@ pub fn calculate_type_score(table: &Table) -> f64 {
 
 /// Calculate type consistency for a single column.
 fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
-    let mut type_counts: HashMap<Type, usize> = HashMap::with_capacity(8);
+    let mut type_counts = [0usize; Type::COUNT];
     let mut total_cells = 0;
 
     for row in &table.rows {
         if col_idx < row.len() {
             let cell_type = detect_cell_type(&row[col_idx]);
-            *type_counts.entry(cell_type).or_insert(0) += 1;
+            type_counts[cell_type.as_index()] += 1;
             total_cells += 1;
         }
     }
@@ -114,11 +113,8 @@ fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
         return 0.0;
     }
 
-    // Calculate the fraction of cells that match the dominant type
-    let _max_count = type_counts.values().copied().max().unwrap_or(0);
-
     // Special handling: NULL values shouldn't penalize the score
-    let null_count = type_counts.get(&Type::NULL).copied().unwrap_or(0);
+    let null_count = type_counts[Type::NULL.as_index()];
     let non_null_total = total_cells - null_count;
 
     if non_null_total == 0 {
@@ -129,7 +125,8 @@ fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
     // Calculate consistency excluding nulls
     let max_non_null = type_counts
         .iter()
-        .filter(|&(&t, _)| t != Type::NULL)
+        .enumerate()
+        .filter(|&(i, _)| i != Type::NULL.as_index())
         .map(|(_, &c)| c)
         .max()
         .unwrap_or(0);
