@@ -300,6 +300,8 @@ impl Sniffer {
 }
 
 /// Detect if the first row (after preamble) is likely a header row.
+///
+/// Optimized: Computes type counts in a single pass without allocating Vecs.
 fn detect_header(
     table: &crate::tum::table::Table,
     _dialect: &PotentialDialect,
@@ -325,18 +327,21 @@ fn detect_header(
     let mut header_score = 0.0;
     let mut checks = 0;
 
-    // Check 1: First row is all text, second row has typed data
-    let first_types: Vec<Type> = first_row
-        .iter()
-        .map(|s| crate::tum::type_detection::detect_cell_type(s))
-        .collect();
-    let second_types: Vec<Type> = second_row
-        .iter()
-        .map(|s| crate::tum::type_detection::detect_cell_type(s))
-        .collect();
+    // Check 1 & 2: Count types in a single pass for first row
+    let (first_text_count, first_numeric_count) =
+        first_row.iter().fold((0, 0), |(text, num), s| {
+            let t = crate::tum::type_detection::detect_cell_type(s);
+            (
+                text + usize::from(t == Type::Text),
+                num + usize::from(t.is_numeric()),
+            )
+        });
 
-    let first_text_count = first_types.iter().filter(|&&t| t == Type::Text).count();
-    let second_text_count = second_types.iter().filter(|&&t| t == Type::Text).count();
+    // Count types in a single pass for second row
+    let second_text_count = second_row
+        .iter()
+        .filter(|s| crate::tum::type_detection::detect_cell_type(s) == Type::Text)
+        .count();
 
     if first_text_count > second_text_count {
         header_score += 1.0;
@@ -344,7 +349,6 @@ fn detect_header(
     checks += 1;
 
     // Check 2: First row has more text than numeric
-    let first_numeric_count = first_types.iter().filter(|&&t| t.is_numeric()).count();
     if first_text_count > first_numeric_count {
         header_score += 0.5;
     }

@@ -1,8 +1,100 @@
-//! Type detection for CSV cells using regex patterns.
+//! Type detection for CSV cells using optimized string operations.
 
 use super::regexes::*;
 use super::table::Table;
 use crate::field_type::Type;
+
+/// Check for NULL-like values using string matching instead of regex.
+/// This is a hot path optimization - called for every cell.
+#[inline]
+fn is_null_value(s: &str) -> bool {
+    matches!(
+        s,
+        "" | "-"
+            | "--"
+            | "."
+            | ".."
+            | "?"
+            | "null"
+            | "NULL"
+            | "Null"
+            | "nil"
+            | "NIL"
+            | "Nil"
+            | "none"
+            | "NONE"
+            | "None"
+            | "na"
+            | "NA"
+            | "Na"
+            | "n/a"
+            | "N/A"
+            | "N/a"
+            | "nan"
+            | "NaN"
+            | "NAN"
+            | "#N/A"
+            | "#VALUE!"
+            | "#REF!"
+            | "#DIV/0!"
+    )
+}
+
+/// Check for unsigned integer using string parsing instead of regex.
+/// This is a hot path optimization - called for every cell.
+#[inline]
+fn is_unsigned_int(s: &str) -> bool {
+    let s = s.strip_prefix('+').unwrap_or(s);
+    !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Check for signed integer using string parsing instead of regex.
+/// Returns true only for negative integers (positive ones are unsigned).
+#[inline]
+fn is_signed_int(s: &str) -> bool {
+    if let Some(rest) = s.strip_prefix('-') {
+        !rest.is_empty() && rest.len() <= 20 && rest.bytes().all(|b| b.is_ascii_digit())
+    } else {
+        false
+    }
+}
+
+/// Check for boolean values using exhaustive match instead of regex.
+/// This is a hot path optimization - called for every cell.
+#[inline]
+fn is_boolean(s: &str) -> bool {
+    matches!(
+        s,
+        "true"
+            | "TRUE"
+            | "True"
+            | "false"
+            | "FALSE"
+            | "False"
+            | "yes"
+            | "YES"
+            | "Yes"
+            | "no"
+            | "NO"
+            | "No"
+            | "y"
+            | "Y"
+            | "n"
+            | "N"
+            | "t"
+            | "T"
+            | "f"
+            | "F"
+            | "1"
+            | "0"
+            | "on"
+            | "ON"
+            | "On"
+            | "off"
+            | "OFF"
+            | "Off"
+    )
+}
 
 /// Detect the type of a single cell value.
 pub fn detect_cell_type(value: &str) -> Type {
@@ -13,27 +105,27 @@ pub fn detect_cell_type(value: &str) -> Type {
         return Type::NULL;
     }
 
-    // Check for NULL-like values
-    if NULL_PATTERN.is_match(trimmed) {
+    // Check for NULL-like values using optimized string matching
+    if is_null_value(trimmed) {
         return Type::NULL;
     }
 
     // Check for unsigned integer (must come before boolean since 1/0 match boolean)
-    if UNSIGNED_PATTERN.is_match(trimmed) && !trimmed.starts_with('-') {
+    if is_unsigned_int(trimmed) {
         return Type::Unsigned;
     }
 
-    // Check for signed integer
-    if SIGNED_PATTERN.is_match(trimmed) {
+    // Check for signed integer (negative numbers only)
+    if is_signed_int(trimmed) {
         return Type::Signed;
     }
 
     // Check for boolean (after integers so "1" and "0" are treated as numbers)
-    if BOOLEAN_PATTERN.is_match(trimmed) {
+    if is_boolean(trimmed) {
         return Type::Boolean;
     }
 
-    // Check for float
+    // Check for float - use regex for complex patterns but fast-path simple cases
     if FLOAT_PATTERN.is_match(trimmed) {
         // Distinguish between integer-like floats and actual floats
         // Avoid to_lowercase() allocation by checking both cases directly
@@ -68,6 +160,8 @@ pub fn detect_cell_type(value: &str) -> Type {
 ///
 /// This score measures how well the values in each column conform to
 /// consistent data types. Higher scores indicate better type consistency.
+///
+/// Optimized: Single pass through all cells, tracking type counts for all columns simultaneously.
 pub fn calculate_type_score(table: &Table) -> f64 {
     if table.is_empty() {
         return 0.0;
@@ -78,13 +172,28 @@ pub fn calculate_type_score(table: &Table) -> f64 {
         return 0.0;
     }
 
+    // Track type counts for ALL columns in one pass
+    // Each column gets an array of type counts
+    let mut col_type_counts: Vec<[usize; Type::COUNT]> = vec![[0; Type::COUNT]; num_cols];
+    let mut col_totals: Vec<usize> = vec![0; num_cols];
+
+    // Single pass through all rows and cells
+    for row in &table.rows {
+        for (col_idx, cell) in row.iter().enumerate().take(num_cols) {
+            let cell_type = detect_cell_type(cell);
+            col_type_counts[col_idx][cell_type.as_index()] += 1;
+            col_totals[col_idx] += 1;
+        }
+    }
+
+    // Calculate scores from accumulated counts
     let mut total_score = 0.0;
     let mut valid_cols = 0;
 
     for col_idx in 0..num_cols {
-        let col_score = column_type_consistency(table, col_idx);
-        if col_score > 0.0 {
-            total_score += col_score;
+        let score = compute_consistency_from_counts(&col_type_counts[col_idx], col_totals[col_idx]);
+        if score > 0.0 {
+            total_score += score;
             valid_cols += 1;
         }
     }
@@ -96,19 +205,9 @@ pub fn calculate_type_score(table: &Table) -> f64 {
     total_score / valid_cols as f64
 }
 
-/// Calculate type consistency for a single column.
-fn column_type_consistency(table: &Table, col_idx: usize) -> f64 {
-    let mut type_counts = [0usize; Type::COUNT];
-    let mut total_cells = 0;
-
-    for row in &table.rows {
-        if col_idx < row.len() {
-            let cell_type = detect_cell_type(&row[col_idx]);
-            type_counts[cell_type.as_index()] += 1;
-            total_cells += 1;
-        }
-    }
-
+/// Compute type consistency score from pre-computed type counts.
+#[inline]
+fn compute_consistency_from_counts(type_counts: &[usize; Type::COUNT], total_cells: usize) -> f64 {
     if total_cells == 0 {
         return 0.0;
     }
