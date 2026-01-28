@@ -42,8 +42,9 @@ impl Type {
     pub const COUNT: usize = 8;
 
     /// Returns the index for this type (0-7), suitable for array indexing.
-    /// Maps to the same values as priority(): NULL=0, Boolean=1, Unsigned=2,
-    /// Signed=3, Float=4, Date=5, DateTime=6, Text=7.
+    /// This index is based on type priority (see `priority()`), not enum
+    /// declaration order: NULL=0, Boolean=1, Unsigned=2, Signed=3, Float=4,
+    /// Date=5, DateTime=6, Text=7.
     #[inline]
     pub const fn as_index(&self) -> usize {
         self.priority() as usize
