@@ -4,7 +4,7 @@
 //! to rank potential CSV dialects.
 
 use super::potential_dialects::PotentialDialect;
-use super::table::{Table, parse_table};
+use super::table::{Table, parse_table, parse_table_normalized};
 use super::type_detection::{calculate_pattern_score, calculate_type_score};
 use super::uniformity::{calculate_tau_0, calculate_tau_1, is_uniform};
 
@@ -24,6 +24,121 @@ impl QuoteCounts {
             single: bytecount::count(data, b'\''),
             data_len: data.len(),
         }
+    }
+}
+
+/// Pre-computed quote boundary counts for both quote characters.
+/// Used to avoid redundant data scanning across multiple dialect evaluations.
+#[derive(Debug, Clone)]
+struct QuoteBoundaryCounts {
+    /// Boundary counts for double quote with each delimiter
+    double_boundaries: Vec<(u8, usize)>,
+    /// Boundary counts for single quote with each delimiter
+    single_boundaries: Vec<(u8, usize)>,
+    /// Newline boundary counts for double quote (not delimiter-specific)
+    double_newline_boundaries: usize,
+    /// Newline boundary counts for single quote (not delimiter-specific)
+    single_newline_boundaries: usize,
+    /// Whether data starts with double quote
+    starts_with_double: bool,
+    /// Whether data starts with single quote
+    starts_with_single: bool,
+}
+
+impl QuoteBoundaryCounts {
+    /// Compute quote boundary counts for all delimiters in a single pass.
+    fn new(data: &[u8], delimiters: &[u8]) -> Self {
+        let mut double_counts: Vec<usize> = vec![0; delimiters.len()];
+        let mut single_counts: Vec<usize> = vec![0; delimiters.len()];
+        let mut double_newline_boundaries: usize = 0;
+        let mut single_newline_boundaries: usize = 0;
+
+        // Create lookup table for delimiter indices
+        let mut delim_indices = [usize::MAX; 256];
+        for (i, &d) in delimiters.iter().enumerate() {
+            delim_indices[d as usize] = i;
+        }
+
+        // Single pass through data for all delimiters
+        for window in data.windows(2) {
+            let is_newline = window[0] == b'\n' || window[0] == b'\r';
+            let delim_idx = delim_indices[window[0] as usize];
+            let is_delimiter = delim_idx != usize::MAX;
+
+            // Quote after delimiter/newline (field start)
+            if is_newline || is_delimiter {
+                if window[1] == b'"' {
+                    if is_newline {
+                        // Count newline boundaries separately (once, not per delimiter)
+                        double_newline_boundaries += 1;
+                    } else {
+                        // Count delimiter-specific boundary
+                        double_counts[delim_idx] += 1;
+                    }
+                }
+                if window[1] == b'\'' {
+                    if is_newline {
+                        single_newline_boundaries += 1;
+                    } else {
+                        single_counts[delim_idx] += 1;
+                    }
+                }
+            }
+
+            // Quote before delimiter/newline (field end)
+            let is_end_newline = window[1] == b'\n' || window[1] == b'\r';
+            let end_delim_idx = delim_indices[window[1] as usize];
+            let is_end_delimiter = end_delim_idx != usize::MAX;
+
+            if window[0] == b'"' && (is_end_newline || is_end_delimiter) {
+                if is_end_newline {
+                    double_newline_boundaries += 1;
+                } else {
+                    double_counts[end_delim_idx] += 1;
+                }
+            }
+            if window[0] == b'\'' && (is_end_newline || is_end_delimiter) {
+                if is_end_newline {
+                    single_newline_boundaries += 1;
+                } else {
+                    single_counts[end_delim_idx] += 1;
+                }
+            }
+        }
+
+        let starts_with_double = !data.is_empty() && data[0] == b'"';
+        let starts_with_single = !data.is_empty() && data[0] == b'\'';
+
+        Self {
+            double_boundaries: delimiters.iter().copied().zip(double_counts).collect(),
+            single_boundaries: delimiters.iter().copied().zip(single_counts).collect(),
+            double_newline_boundaries,
+            single_newline_boundaries,
+            starts_with_double,
+            starts_with_single,
+        }
+    }
+
+    /// Get the boundary count for a specific quote character and delimiter.
+    fn get_boundary_count(&self, quote_char: u8, delimiter: u8) -> usize {
+        let (boundaries, newline_boundaries) = if quote_char == b'"' {
+            (&self.double_boundaries, self.double_newline_boundaries)
+        } else {
+            (&self.single_boundaries, self.single_newline_boundaries)
+        };
+
+        let delimiter_count = boundaries
+            .iter()
+            .find(|&&(d, _)| d == delimiter)
+            .map_or(0, |&(_, c)| c);
+
+        // Add 1 if data starts with this quote char
+        let starts_with_quote = (quote_char == b'"' && self.starts_with_double)
+            || (quote_char == b'\'' && self.starts_with_single);
+        let start_bonus = usize::from(starts_with_quote);
+
+        // Combine delimiter-specific count with newline boundaries (which apply to all delimiters)
+        delimiter_count + newline_boundaries + start_bonus
     }
 }
 
@@ -227,6 +342,33 @@ fn score_dialect_with_counts(
     (score, table)
 }
 
+/// Score a dialect against pre-normalized data with pre-computed quote counts.
+///
+/// This variant assumes the data has already been normalized to LF line endings
+/// for better performance when scoring multiple dialects.
+fn score_dialect_with_normalized_data(
+    normalized_data: &[u8],
+    dialect: &PotentialDialect,
+    max_rows: usize,
+    quote_counts: &QuoteCounts,
+    boundary_counts: &QuoteBoundaryCounts,
+) -> (DialectScore, Table) {
+    let table = parse_table_normalized(normalized_data, dialect, max_rows);
+
+    if table.is_empty() {
+        return (DialectScore::zero(dialect.clone()), table);
+    }
+
+    let mut score = DialectScore::new(dialect.clone(), &table);
+
+    // Apply quote evidence scoring using pre-computed counts and cached boundary counts
+    let quote_multiplier =
+        quote_evidence_score_with_cached_boundaries(quote_counts, boundary_counts, dialect);
+    score.gamma *= quote_multiplier;
+
+    (score, table)
+}
+
 /// Calculate a score multiplier based on quote character evidence in the data.
 ///
 /// This function examines the actual presence of quote characters in the data
@@ -300,6 +442,7 @@ fn quote_evidence_score_with_counts(quote_counts: &QuoteCounts, dialect: &Potent
 
 /// Check if quote characters appear at field boundaries (stronger evidence).
 /// Returns the count of boundary pairs found.
+#[allow(dead_code)]
 fn quote_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
     let mut boundary_pairs = 0;
     for window in data.windows(2) {
@@ -321,6 +464,85 @@ fn quote_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
         boundary_pairs += 1;
     }
     boundary_pairs
+}
+
+/// Calculate quote evidence score using pre-computed counts and cached boundary counts.
+/// This is the optimized version that avoids redundant data scanning.
+fn quote_evidence_score_with_cached_boundaries(
+    quote_counts: &QuoteCounts,
+    boundary_counts: &QuoteBoundaryCounts,
+    dialect: &PotentialDialect,
+) -> f64 {
+    use crate::metadata::Quote;
+
+    if quote_counts.data_len == 0 {
+        return 1.0;
+    }
+
+    // Calculate density (quotes per 1000 bytes) - higher density suggests quoting
+    let double_density = (quote_counts.double * 1000) / quote_counts.data_len;
+    let single_density = (quote_counts.single * 1000) / quote_counts.data_len;
+
+    // Threshold: need at least ~0.5% quote density to consider it significant
+    // This filters out incidental apostrophes in text
+    let min_density_threshold = 5; // 0.5% = 5 per 1000
+
+    match dialect.quote {
+        Quote::Some(b'"') => {
+            let boundary_count = boundary_counts.get_boundary_count(b'"', dialect.delimiter);
+            if quote_counts.single == 0 && boundary_count >= 2 {
+                // No single quotes AND double quotes at boundaries - very strong evidence
+                // This handles small files with quoted fields containing delimiters
+                2.2
+            } else if boundary_count >= 2 && double_density >= min_density_threshold {
+                // Double quotes at boundaries with good density
+                1.15
+            } else if double_density >= min_density_threshold {
+                // Double quotes have significant density - moderate boost
+                1.08
+            } else {
+                // Neutral - rely on other scoring factors
+                1.0
+            }
+        }
+        Quote::Some(b'\'') => {
+            // Single quotes are tricky because apostrophes are common in text
+            // MUST have boundary evidence - single quotes at field boundaries are the key signal
+            let boundary_count = boundary_counts.get_boundary_count(b'\'', dialect.delimiter);
+            if quote_counts.double == 0
+                && boundary_count >= 4
+                && single_density >= min_density_threshold * 2
+            {
+                // No double quotes, many single quote boundaries, high density
+                // This is strong evidence of single-quote quoting
+                2.2
+            } else if quote_counts.double == 0
+                && boundary_count >= 2
+                && single_density >= min_density_threshold
+            {
+                // No double quotes, some single quote boundaries, decent density
+                1.20
+            } else if double_density >= min_density_threshold {
+                // Double quotes present - penalize single-quote detection
+                0.90
+            } else if boundary_count == 0 && single_density > 0 {
+                // Single quotes present but not at boundaries - likely just text content
+                // Slight penalty to prefer double-quote as default
+                0.95
+            } else {
+                1.0
+            }
+        }
+        Quote::None => {
+            // Only penalize Quote::None when there's strong quoting evidence
+            if double_density >= min_density_threshold {
+                0.90
+            } else {
+                1.0
+            }
+        }
+        Quote::Some(_) => 1.0, // Other quote chars - neutral
+    }
 }
 
 /// Calculate quote evidence score using pre-computed counts and raw data for boundary detection.
@@ -526,6 +748,26 @@ pub fn score_all_dialects_with_best_table(
     // Pre-compute quote counts once for all dialect evaluations
     let quote_counts = QuoteCounts::new(data);
 
+    // Get the list of delimiters being tested
+    let delimiters: Vec<u8> = dialects
+        .iter()
+        .map(|d| d.delimiter)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    // Pre-compute quote boundary counts for all delimiters in one pass
+    let boundary_counts = QuoteBoundaryCounts::new(data, &delimiters);
+
+    // Detect and normalize line endings once for all dialects
+    // All dialects in the list have the same line terminator (set by detect_line_terminator)
+    let line_terminator = dialects
+        .first()
+        .map_or(super::potential_dialects::LineTerminator::LF, |d| {
+            d.line_terminator
+        });
+    let normalized_data = super::potential_dialects::normalize_line_endings(data, line_terminator);
+
     // Score all dialects and keep track of the best table
     let mut best_table: Option<Table> = None;
     let mut best_gamma: f64 = f64::NEG_INFINITY;
@@ -533,7 +775,13 @@ pub fn score_all_dialects_with_best_table(
     let mut scores: Vec<DialectScore> = dialects
         .iter()
         .map(|d| {
-            let (score, table) = score_dialect_with_counts(data, d, max_rows, &quote_counts);
+            let (score, table) = score_dialect_with_normalized_data(
+                &normalized_data,
+                d,
+                max_rows,
+                &quote_counts,
+                &boundary_counts,
+            );
             // Track the table with the highest gamma score
             if score.gamma > best_gamma {
                 best_gamma = score.gamma;

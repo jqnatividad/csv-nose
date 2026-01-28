@@ -152,6 +152,44 @@ pub fn generate_dialects_with_terminator(line_terminator: LineTerminator) -> Vec
     dialects
 }
 
+/// Normalize line endings to LF for consistent parsing.
+///
+/// Returns `Cow::Borrowed` for LF data (zero-copy) and `Cow::Owned` for CR/CRLF.
+/// This is used to normalize data once before scoring multiple dialects.
+pub fn normalize_line_endings(
+    data: &[u8],
+    line_terminator: LineTerminator,
+) -> std::borrow::Cow<'_, [u8]> {
+    use std::borrow::Cow;
+
+    match line_terminator {
+        LineTerminator::LF => Cow::Borrowed(data), // Zero-copy for LF
+        LineTerminator::CRLF => {
+            // Replace \r\n with \n
+            let mut result = Vec::with_capacity(data.len());
+            let mut i = 0;
+            while i < data.len() {
+                if i + 1 < data.len() && data[i] == b'\r' && data[i + 1] == b'\n' {
+                    result.push(b'\n');
+                    i += 2;
+                } else {
+                    result.push(data[i]);
+                    i += 1;
+                }
+            }
+            Cow::Owned(result)
+        }
+        LineTerminator::CR => {
+            // Replace standalone \r with \n
+            Cow::Owned(
+                data.iter()
+                    .map(|&b| if b == b'\r' { b'\n' } else { b })
+                    .collect(),
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -48,24 +48,51 @@ impl Table {
 
     /// Compute the modal field count from field_counts.
     /// Called internally after parsing or when constructing tables manually.
+    ///
+    /// Optimized: Uses a frequency array for small field counts (≤256),
+    /// falling back to HashMap for unusually wide tables.
     fn compute_modal_field_count(field_counts: &[usize]) -> usize {
         if field_counts.is_empty() {
             return 0;
         }
 
-        let mut counts: HashMap<usize, usize> = HashMap::with_capacity(field_counts.len());
-        for &fc in field_counts {
-            *counts.entry(fc).or_insert(0) += 1;
-        }
+        let max_fc = field_counts.iter().copied().max().unwrap_or(0);
 
-        // Use deterministic tie-breaking: prefer higher field count when frequencies are equal
-        // This ensures consistent results regardless of HashMap iteration order
-        counts
-            .into_iter()
-            .max_by(|(fc_a, count_a), (fc_b, count_b)| {
-                count_a.cmp(count_b).then_with(|| fc_a.cmp(fc_b))
-            })
-            .map_or(0, |(fc, _)| fc)
+        // Use array for small field counts (most common case), HashMap for large
+        if max_fc <= 256 {
+            // Fast path: use fixed-size array
+            let mut freq = [0usize; 257];
+            for &fc in field_counts {
+                freq[fc] += 1;
+            }
+
+            // Find the modal field count with deterministic tie-breaking
+            // (prefer higher field count when frequencies are equal)
+            let mut best_fc = 0;
+            let mut best_count = 0;
+            for (fc, &count) in freq.iter().enumerate() {
+                if count > best_count || (count == best_count && fc > best_fc) {
+                    best_fc = fc;
+                    best_count = count;
+                }
+            }
+            best_fc
+        } else {
+            // Fallback to HashMap for unusually wide tables
+            let mut counts: HashMap<usize, usize> = HashMap::with_capacity(field_counts.len());
+            for &fc in field_counts {
+                *counts.entry(fc).or_insert(0) += 1;
+            }
+
+            // Use deterministic tie-breaking: prefer higher field count when frequencies are equal
+            // This ensures consistent results regardless of HashMap iteration order
+            counts
+                .into_iter()
+                .max_by(|(fc_a, count_a), (fc_b, count_b)| {
+                    count_a.cmp(count_b).then_with(|| fc_a.cmp(fc_b))
+                })
+                .map_or(0, |(fc, _)| fc)
+        }
     }
 
     /// Update the cached modal field count. Call after modifying field_counts.
@@ -99,6 +126,35 @@ impl Default for Table {
 /// * `dialect` - The dialect to use for parsing
 /// * `max_rows` - Maximum number of rows to parse (0 = unlimited)
 pub fn parse_table(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> Table {
+    // Normalize line endings for this dialect
+    let normalized = normalize_line_endings(data, dialect);
+    parse_table_impl(&normalized, dialect, max_rows)
+}
+
+/// Parse data into a table assuming line endings are already normalized to LF.
+///
+/// This function skips line ending normalization for performance when the caller
+/// has already normalized the data (e.g., in `score_all_dialects_with_best_table`).
+///
+/// # Arguments
+/// * `data` - The CSV data bytes with LF-normalized line endings
+/// * `dialect` - The dialect to use for parsing
+/// * `max_rows` - Maximum number of rows to parse (0 = unlimited)
+pub(crate) fn parse_table_normalized(
+    data: &[u8],
+    dialect: &PotentialDialect,
+    max_rows: usize,
+) -> Table {
+    parse_table_impl(data, dialect, max_rows)
+}
+
+/// Internal implementation of table parsing.
+///
+/// # Arguments
+/// * `data` - The CSV data bytes (should have LF line endings)
+/// * `dialect` - The dialect to use for parsing
+/// * `max_rows` - Maximum number of rows to parse (0 = unlimited)
+fn parse_table_impl<D: AsRef<[u8]>>(data: D, dialect: &PotentialDialect, max_rows: usize) -> Table {
     let mut table = Table::new();
 
     // Build CSV reader with the dialect settings
@@ -119,10 +175,7 @@ pub fn parse_table(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> 
         }
     }
 
-    // Handle different line terminators by normalizing the data
-    let normalized = normalize_line_endings(data, dialect);
-
-    let cursor = Cursor::new(normalized);
+    let cursor = Cursor::new(data);
     let mut reader = reader_builder.from_reader(cursor);
 
     let mut record = csv::StringRecord::new();
