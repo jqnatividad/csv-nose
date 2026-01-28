@@ -35,6 +35,10 @@ struct QuoteBoundaryCounts {
     double_boundaries: Vec<(u8, usize)>,
     /// Boundary counts for single quote with each delimiter
     single_boundaries: Vec<(u8, usize)>,
+    /// Newline boundary counts for double quote (not delimiter-specific)
+    double_newline_boundaries: usize,
+    /// Newline boundary counts for single quote (not delimiter-specific)
+    single_newline_boundaries: usize,
     /// Whether data starts with double quote
     starts_with_double: bool,
     /// Whether data starts with single quote
@@ -46,6 +50,8 @@ impl QuoteBoundaryCounts {
     fn new(data: &[u8], delimiters: &[u8]) -> Self {
         let mut double_counts: Vec<usize> = vec![0; delimiters.len()];
         let mut single_counts: Vec<usize> = vec![0; delimiters.len()];
+        let mut double_newline_boundaries: usize = 0;
+        let mut single_newline_boundaries: usize = 0;
 
         // Create lookup table for delimiter indices
         let mut delim_indices = [usize::MAX; 256];
@@ -55,47 +61,47 @@ impl QuoteBoundaryCounts {
 
         // Single pass through data for all delimiters
         for window in data.windows(2) {
-            let is_field_boundary = window[0] == b',' || // Check common delimiters quickly
-                window[0] == b'\n' ||
-                window[0] == b'\r' ||
-                delim_indices[window[0] as usize] != usize::MAX;
+            let is_newline = window[0] == b'\n' || window[0] == b'\r';
+            let delim_idx = delim_indices[window[0] as usize];
+            let is_delimiter = delim_idx != usize::MAX;
 
             // Quote after delimiter/newline (field start)
-            if is_field_boundary {
+            if is_newline || is_delimiter {
                 if window[1] == b'"' {
-                    for (i, &d) in delimiters.iter().enumerate() {
-                        if window[0] == d || window[0] == b'\n' || window[0] == b'\r' {
-                            double_counts[i] += 1;
-                        }
+                    if is_newline {
+                        // Count newline boundaries separately (once, not per delimiter)
+                        double_newline_boundaries += 1;
+                    } else {
+                        // Count delimiter-specific boundary
+                        double_counts[delim_idx] += 1;
                     }
                 }
                 if window[1] == b'\'' {
-                    for (i, &d) in delimiters.iter().enumerate() {
-                        if window[0] == d || window[0] == b'\n' || window[0] == b'\r' {
-                            single_counts[i] += 1;
-                        }
+                    if is_newline {
+                        single_newline_boundaries += 1;
+                    } else {
+                        single_counts[delim_idx] += 1;
                     }
                 }
             }
 
             // Quote before delimiter/newline (field end)
-            let is_field_end = window[1] == b','
-                || window[1] == b'\n'
-                || window[1] == b'\r'
-                || delim_indices[window[1] as usize] != usize::MAX;
+            let is_end_newline = window[1] == b'\n' || window[1] == b'\r';
+            let end_delim_idx = delim_indices[window[1] as usize];
+            let is_end_delimiter = end_delim_idx != usize::MAX;
 
-            if window[0] == b'"' && is_field_end {
-                for (i, &d) in delimiters.iter().enumerate() {
-                    if window[1] == d || window[1] == b'\n' || window[1] == b'\r' {
-                        double_counts[i] += 1;
-                    }
+            if window[0] == b'"' && (is_end_newline || is_end_delimiter) {
+                if is_end_newline {
+                    double_newline_boundaries += 1;
+                } else {
+                    double_counts[end_delim_idx] += 1;
                 }
             }
-            if window[0] == b'\'' && is_field_end {
-                for (i, &d) in delimiters.iter().enumerate() {
-                    if window[1] == d || window[1] == b'\n' || window[1] == b'\r' {
-                        single_counts[i] += 1;
-                    }
+            if window[0] == b'\'' && (is_end_newline || is_end_delimiter) {
+                if is_end_newline {
+                    single_newline_boundaries += 1;
+                } else {
+                    single_counts[end_delim_idx] += 1;
                 }
             }
         }
@@ -106,6 +112,8 @@ impl QuoteBoundaryCounts {
         Self {
             double_boundaries: delimiters.iter().copied().zip(double_counts).collect(),
             single_boundaries: delimiters.iter().copied().zip(single_counts).collect(),
+            double_newline_boundaries,
+            single_newline_boundaries,
             starts_with_double,
             starts_with_single,
         }
@@ -113,13 +121,13 @@ impl QuoteBoundaryCounts {
 
     /// Get the boundary count for a specific quote character and delimiter.
     fn get_boundary_count(&self, quote_char: u8, delimiter: u8) -> usize {
-        let boundaries = if quote_char == b'"' {
-            &self.double_boundaries
+        let (boundaries, newline_boundaries) = if quote_char == b'"' {
+            (&self.double_boundaries, self.double_newline_boundaries)
         } else {
-            &self.single_boundaries
+            (&self.single_boundaries, self.single_newline_boundaries)
         };
 
-        let base_count = boundaries
+        let delimiter_count = boundaries
             .iter()
             .find(|&&(d, _)| d == delimiter)
             .map_or(0, |&(_, c)| c);
@@ -129,7 +137,8 @@ impl QuoteBoundaryCounts {
             || (quote_char == b'\'' && self.starts_with_single);
         let start_bonus = usize::from(starts_with_quote);
 
-        base_count + start_bonus
+        // Combine delimiter-specific count with newline boundaries (which apply to all delimiters)
+        delimiter_count + newline_boundaries + start_bonus
     }
 }
 

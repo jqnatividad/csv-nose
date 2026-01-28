@@ -42,18 +42,20 @@ fn is_null_value(s: &str) -> bool {
 
 /// Check for unsigned integer using string parsing instead of regex.
 /// This is a hot path optimization - called for every cell.
+/// Limit to 19 digits to ensure all values fit in u64 (max is 18,446,744,073,709,551,615).
 #[inline]
 fn is_unsigned_int(s: &str) -> bool {
     let s = s.strip_prefix('+').unwrap_or(s);
-    !s.is_empty() && s.len() <= 20 && s.bytes().all(|b| b.is_ascii_digit())
+    !s.is_empty() && s.len() <= 19 && s.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Check for signed integer using string parsing instead of regex.
 /// Returns true only for negative integers (positive ones are unsigned).
+/// Limit to 19 digits to ensure all values fit in i64 (min is -9,223,372,036,854,775,808).
 #[inline]
 fn is_signed_int(s: &str) -> bool {
     if let Some(rest) = s.strip_prefix('-') {
-        !rest.is_empty() && rest.len() <= 20 && rest.bytes().all(|b| b.is_ascii_digit())
+        !rest.is_empty() && rest.len() <= 19 && rest.bytes().all(|b| b.is_ascii_digit())
     } else {
         false
     }

@@ -140,7 +140,11 @@ pub fn parse_table(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> 
 /// * `data` - The CSV data bytes with LF-normalized line endings
 /// * `dialect` - The dialect to use for parsing
 /// * `max_rows` - Maximum number of rows to parse (0 = unlimited)
-pub fn parse_table_normalized(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> Table {
+pub(crate) fn parse_table_normalized(
+    data: &[u8],
+    dialect: &PotentialDialect,
+    max_rows: usize,
+) -> Table {
     parse_table_impl(data, dialect, max_rows)
 }
 
