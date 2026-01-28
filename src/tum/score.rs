@@ -243,7 +243,7 @@ fn quote_evidence_score(data: &[u8], dialect: &PotentialDialect) -> f64 {
 
 /// Calculate quote evidence score using pre-computed quote counts.
 /// This avoids redundant byte counting when scoring multiple dialects.
-const fn quote_evidence_score_with_counts(
+fn quote_evidence_score_with_counts(
     quote_counts: &QuoteCounts,
     dialect: &PotentialDialect,
 ) -> f64 {

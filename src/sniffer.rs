@@ -74,13 +74,13 @@ impl Sniffer {
     }
 
     /// Force a specific delimiter (skip delimiter detection).
-    pub const fn delimiter(&mut self, delimiter: u8) -> &mut Self {
+    pub fn delimiter(&mut self, delimiter: u8) -> &mut Self {
         self.forced_delimiter = Some(delimiter);
         self
     }
 
     /// Force a specific quote character.
-    pub const fn quote(&mut self, quote: Quote) -> &mut Self {
+    pub fn quote(&mut self, quote: Quote) -> &mut Self {
         self.forced_quote = Some(quote);
         self
     }
