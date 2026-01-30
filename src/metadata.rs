@@ -117,6 +117,7 @@ impl Default for Quote {
 
 impl Quote {
     /// Returns the quote character if set.
+    #[inline]
     pub fn char(&self) -> Option<u8> {
         match self {
             Quote::None => None,
