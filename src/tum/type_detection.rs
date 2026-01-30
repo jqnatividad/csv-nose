@@ -65,37 +65,17 @@ fn is_signed_int(s: &str) -> bool {
 /// This is a hot path optimization - called for every cell.
 #[inline]
 fn is_boolean(s: &str) -> bool {
-    matches!(
-        s,
-        "true"
-            | "TRUE"
-            | "True"
-            | "false"
-            | "FALSE"
-            | "False"
-            | "yes"
-            | "YES"
-            | "Yes"
-            | "no"
-            | "NO"
-            | "No"
-            | "y"
-            | "Y"
-            | "n"
-            | "N"
-            | "t"
-            | "T"
-            | "f"
-            | "F"
-            | "1"
-            | "0"
-            | "on"
-            | "ON"
-            | "On"
-            | "off"
-            | "OFF"
-            | "Off"
-    )
+    match s.len() {
+        1 => {
+            let b = s.as_bytes()[0].to_ascii_lowercase();
+            matches!(b, b'1' | b'0' | b'y' | b'n' | b't' | b'f')
+        }
+        2 => s.eq_ignore_ascii_case("on") || s.eq_ignore_ascii_case("no"),
+        3 => s.eq_ignore_ascii_case("yes") || s.eq_ignore_ascii_case("off"),
+        4 => s.eq_ignore_ascii_case("true"),
+        5 => s.eq_ignore_ascii_case("false"),
+        _ => false,
+    }
 }
 
 /// Detect the type of a single cell value.
