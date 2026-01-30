@@ -162,7 +162,8 @@ fn parse_table_impl<D: AsRef<[u8]>>(data: D, dialect: &PotentialDialect, max_row
     reader_builder
         .delimiter(dialect.delimiter)
         .has_headers(false)
-        .flexible(true);
+        .flexible(true)
+        .buffer_capacity(32768); // 32KB buffer
 
     // Configure quoting
     match dialect.quote {
