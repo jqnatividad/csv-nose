@@ -52,13 +52,13 @@ impl Type {
 
     /// Returns true if this type is numeric.
     #[inline]
-    pub fn is_numeric(&self) -> bool {
+    pub const fn is_numeric(&self) -> bool {
         matches!(self, Type::Unsigned | Type::Signed | Type::Float)
     }
 
     /// Returns true if this type is temporal.
     #[inline]
-    pub fn is_temporal(&self) -> bool {
+    pub const fn is_temporal(&self) -> bool {
         matches!(self, Type::Date | Type::DateTime)
     }
 
