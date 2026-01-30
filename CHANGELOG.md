@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-01-30
+
+### Performance
+
+- Set CSV reader buffer capacity to 32KB (from default 8KB) for improved parsing performance with larger sample data
+- Add `#[inline]` to `Quote::char` method
+- Optimize `is_boolean` check in type detection pipeline
+- Make `is_numeric` and `is_temporal` const functions for compile-time optimization
+
+### Changed
+
+- Bump `clap` from 4.5.55 to 4.5.56
+
+### Fixed
+
+- Remove incorrect citation in documentation
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v0.7.0...v0.8.0
+
 ## [0.7.0] - 2026-01-28
 
 ### Changed
