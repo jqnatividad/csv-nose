@@ -1,0 +1,26 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo fmt -- --check 2>/dev/null; cargo fmt 2>/dev/null; exit 0"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -qE '(Cargo\\.lock|tests/data/annotations/)'; then echo 'BLOCK: Do not edit lock files or benchmark annotations directly' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
