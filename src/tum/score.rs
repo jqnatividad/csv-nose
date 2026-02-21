@@ -787,16 +787,17 @@ const fn delimiter_priority(delimiter: u8) -> u8 {
         b',' => 10, // Comma - most common, highest priority
         b';' => 9,  // Semicolon - common in European locales
         b'\t' => 8, // Tab - TSV files
-        b'|' => 8,  // Pipe - common in data exports
-        b':' => 4,  // Colon - sometimes used, but also appears in timestamps
-        b'^' => 3,  // Caret - rare
-        b'~' => 3,  // Tilde - rare
-        0xA7 => 2,  // Section sign (§) - rare
-        b'/' => 2,  // Forward slash - rare
-        b' ' => 2,  // Space - very rare as delimiter, often appears in text
-        b'#' => 1,  // Hash - very rare, often used for comments
-        b'&' => 1,  // Ampersand - very rare
-        _ => 0,     // Unknown delimiters - lowest priority
+        b'|' => 8,  // Pipe - common in data exports; intentionally tied with tab (both are
+        // respectable standard delimiters); tie resolved by iteration order
+        b':' => 4, // Colon - sometimes used, but also appears in timestamps
+        b'^' => 3, // Caret - rare
+        b'~' => 3, // Tilde - rare
+        0xA7 => 2, // Section sign (§) - rare
+        b'/' => 2, // Forward slash - rare
+        b' ' => 2, // Space - very rare as delimiter, often appears in text
+        b'#' => 1, // Hash - very rare, often used for comments
+        b'&' => 1, // Ampersand - very rare
+        _ => 0,    // Unknown delimiters - lowest priority
     }
 }
 
@@ -944,5 +945,75 @@ mod tests {
         let best = find_best_dialect(&scores).unwrap();
 
         assert_eq!(best.dialect.delimiter, b',');
+    }
+
+    // --- Tests for quote_opening_boundary_count and get_single_opening_boundary_count ---
+
+    #[test]
+    fn test_quote_opening_boundary_count_apostrophes_only() {
+        // Apostrophes appear only before delimiters (closing-only), not at field starts
+        // e.g. "value's, other" - apostrophe is mid-word, not at field start
+        let data = b"value's, other's, thing's\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // No delimiter→quote or newline→quote or leading-quote transitions
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_genuine_quoting() {
+        // Genuine single-quote quoting: quote appears at field start after delimiter/newline
+        let data = b",'field', 'next'\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // delimiter→' at position 0→1, and space→ doesn't count; ', ' → '
+        // windows: [b',', b'\''] at start → +1; [b' ', b'\''] is space, not delimiter → 0
+        assert!(
+            count >= 1,
+            "expected at least 1 opening boundary, got {count}"
+        );
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_leading_quote() {
+        // Data starts with the quote character = opening boundary
+        let data = b"'field','next'\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // Starts with quote (+1), and delimiter→quote at position 7→8 (+1)
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_empty() {
+        let count = quote_opening_boundary_count(b"", b'\'', b',');
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_get_single_opening_boundary_count_apostrophes_only() {
+        // Apostrophes only at field ends (before delimiter) — no opening boundaries
+        // "it's, we're, they've" — each apostrophe is mid-word, not at a field start
+        let data = b"it's, we're, they've\n";
+        let delimiters = vec![b','];
+        let counts = QuoteBoundaryCounts::new(data, &delimiters);
+        let opening = counts.get_single_opening_boundary_count(b',');
+        assert_eq!(
+            opening, 0,
+            "apostrophes should produce zero opening boundaries"
+        );
+    }
+
+    #[test]
+    fn test_get_single_opening_boundary_count_genuine_quoting() {
+        // Genuine single-quote quoting: 'val','val2' — quote appears right after delimiter
+        let data = b"'first','second','third'\n";
+        let delimiters = vec![b','];
+        let counts = QuoteBoundaryCounts::new(data, &delimiters);
+        let opening = counts.get_single_opening_boundary_count(b',');
+        // data[0] == b'\'' counts via starts_with_single in get_boundary_count, but
+        // get_single_opening_boundary_count only counts delimiter→quote and newline→quote,
+        // plus data[0] if it is a quote (handled by starts_with_single bonus)
+        assert!(
+            opening >= 2,
+            "expected ≥2 opening boundaries for genuinely quoted fields, got {opening}"
+        );
     }
 }
