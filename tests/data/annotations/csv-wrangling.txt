@@ -84,7 +84,7 @@ Formats.csv|utf8|comma|doublequote|doublequote|lf
 fuw1.csv|utf8|semicolon|doublequote||lf
 general.csv|utf8|comma|doublequote||crlf
 GPU_rod_1_metrica.csv|utf8|semicolon|doublequote||lf
-gsi_adresser_og_elevtall_2010.csv|utf8|semicolon|doublequote|doublequote|crlf
+gsi_adresser_og_elevtall_2010.csv|utf8|comma|doublequote|doublequote|crlf
 hirise_captions.csv|utf8|tab|doublequote||lf
 iconbar-hermes.csv|utf8|comma|doublequote||lf
 index_cfi.csv|utf8|comma|doublequote||lf
