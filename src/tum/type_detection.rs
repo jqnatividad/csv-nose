@@ -79,6 +79,7 @@ fn is_boolean(s: &str) -> bool {
 }
 
 /// Detect the type of a single cell value.
+#[inline]
 pub fn detect_cell_type(value: &str) -> Type {
     let trimmed = value.trim();
 
@@ -107,17 +108,15 @@ pub fn detect_cell_type(value: &str) -> Type {
         return Type::Boolean;
     }
 
-    // Check for float - use regex for complex patterns but fast-path simple cases
-    if FLOAT_PATTERN.is_match(trimmed) {
-        // Distinguish between integer-like floats and actual floats
-        // Avoid to_lowercase() allocation by checking both cases directly
-        if trimmed.contains('.') || trimmed.contains('e') || trimmed.contains('E') {
-            return Type::Float;
-        }
+    // Check for float - gate regex with cheap string checks first
+    let has_dot = trimmed.contains('.');
+    let has_exp = trimmed.contains('e') || trimmed.contains('E');
+    if (has_dot || has_exp) && FLOAT_PATTERN.is_match(trimmed) {
+        return Type::Float;
     }
 
     // Check for float with thousand separators
-    if FLOAT_THOUSANDS_PATTERN.is_match(trimmed) {
+    if (trimmed.contains(',') || has_dot) && FLOAT_THOUSANDS_PATTERN.is_match(trimmed) {
         return Type::Float;
     }
 
@@ -138,13 +137,36 @@ pub fn detect_cell_type(value: &str) -> Type {
     Type::Text
 }
 
+/// Reusable buffers for `calculate_type_score` to avoid per-call heap allocations.
+pub struct TypeScoreBuffers {
+    pub col_type_counts: Vec<[usize; Type::COUNT]>,
+    pub col_totals: Vec<usize>,
+}
+
+impl TypeScoreBuffers {
+    pub fn new() -> Self {
+        Self {
+            col_type_counts: Vec::new(),
+            col_totals: Vec::new(),
+        }
+    }
+
+    pub fn reset(&mut self, num_cols: usize) {
+        self.col_type_counts.clear();
+        self.col_type_counts.resize(num_cols, [0usize; Type::COUNT]);
+        self.col_totals.clear();
+        self.col_totals.resize(num_cols, 0);
+    }
+}
+
 /// Calculate the type score for a table.
 ///
 /// This score measures how well the values in each column conform to
 /// consistent data types. Higher scores indicate better type consistency.
 ///
 /// Optimized: Single pass through all cells, tracking type counts for all columns simultaneously.
-pub fn calculate_type_score(table: &Table) -> f64 {
+/// Accepts reusable `buffers` to avoid per-call heap allocations.
+pub fn calculate_type_score(table: &Table, buffers: &mut TypeScoreBuffers) -> f64 {
     if table.is_empty() {
         return 0.0;
     }
@@ -154,17 +176,15 @@ pub fn calculate_type_score(table: &Table) -> f64 {
         return 0.0;
     }
 
-    // Track type counts for ALL columns in one pass
-    // Each column gets an array of type counts
-    let mut col_type_counts: Vec<[usize; Type::COUNT]> = vec![[0; Type::COUNT]; num_cols];
-    let mut col_totals: Vec<usize> = vec![0; num_cols];
+    // Track type counts for ALL columns in one pass using reusable buffers
+    buffers.reset(num_cols);
 
     // Single pass through all rows and cells
     for row in &table.rows {
         for (col_idx, cell) in row.iter().enumerate().take(num_cols) {
             let cell_type = detect_cell_type(cell);
-            col_type_counts[col_idx][cell_type.as_index()] += 1;
-            col_totals[col_idx] += 1;
+            buffers.col_type_counts[col_idx][cell_type.as_index()] += 1;
+            buffers.col_totals[col_idx] += 1;
         }
     }
 
@@ -173,7 +193,10 @@ pub fn calculate_type_score(table: &Table) -> f64 {
     let mut valid_cols = 0;
 
     for col_idx in 0..num_cols {
-        let score = compute_consistency_from_counts(&col_type_counts[col_idx], col_totals[col_idx]);
+        let score = compute_consistency_from_counts(
+            &buffers.col_type_counts[col_idx],
+            buffers.col_totals[col_idx],
+        );
         if score > 0.0 {
             total_score += score;
             valid_cols += 1;

@@ -3,10 +3,18 @@
 //! The gamma score combines uniformity and type detection scores
 //! to rank potential CSV dialects.
 
+use std::cell::RefCell;
+
+use rayon::prelude::*;
+
 use super::potential_dialects::PotentialDialect;
 use super::table::{Table, parse_table, parse_table_normalized};
-use super::type_detection::{calculate_pattern_score, calculate_type_score};
+use super::type_detection::{TypeScoreBuffers, calculate_pattern_score, calculate_type_score};
 use super::uniformity::{calculate_tau_0, calculate_tau_1, is_uniform};
+
+thread_local! {
+    static BUFFERS: RefCell<TypeScoreBuffers> = RefCell::new(TypeScoreBuffers::new());
+}
 
 /// Pre-computed quote character counts for the data.
 /// Used to avoid redundant byte counting across multiple dialect evaluations.
@@ -172,10 +180,9 @@ pub struct DialectScore {
 
 impl DialectScore {
     /// Create a new score result.
-    pub fn new(dialect: PotentialDialect, table: &Table) -> Self {
+    pub fn new(dialect: PotentialDialect, table: &Table, type_score: f64) -> Self {
         let tau_0 = calculate_tau_0(table);
         let tau_1 = calculate_tau_1(table);
-        let type_score = calculate_type_score(table);
         let pattern_score = calculate_pattern_score(table);
         let uniform = is_uniform(table);
 
@@ -312,7 +319,9 @@ fn compute_gamma(
 #[allow(dead_code)]
 pub fn score_dialect(data: &[u8], dialect: &PotentialDialect, max_rows: usize) -> DialectScore {
     let quote_counts = QuoteCounts::new(data);
-    let (score, _table) = score_dialect_with_counts(data, dialect, max_rows, &quote_counts);
+    let mut buffers = TypeScoreBuffers::new();
+    let (score, _table) =
+        score_dialect_with_counts(data, dialect, max_rows, &quote_counts, &mut buffers);
     score
 }
 
@@ -326,6 +335,7 @@ fn score_dialect_with_counts(
     dialect: &PotentialDialect,
     max_rows: usize,
     quote_counts: &QuoteCounts,
+    buffers: &mut TypeScoreBuffers,
 ) -> (DialectScore, Table) {
     let table = parse_table(data, dialect, max_rows);
 
@@ -333,7 +343,8 @@ fn score_dialect_with_counts(
         return (DialectScore::zero(dialect.clone()), table);
     }
 
-    let mut score = DialectScore::new(dialect.clone(), &table);
+    let type_score = calculate_type_score(&table, buffers);
+    let mut score = DialectScore::new(dialect.clone(), &table, type_score);
 
     // Apply quote evidence scoring using pre-computed counts and raw data for boundary detection
     let quote_multiplier = quote_evidence_score_with_data(data, quote_counts, dialect);
@@ -352,6 +363,7 @@ fn score_dialect_with_normalized_data(
     max_rows: usize,
     quote_counts: &QuoteCounts,
     boundary_counts: &QuoteBoundaryCounts,
+    buffers: &mut TypeScoreBuffers,
 ) -> (DialectScore, Table) {
     let table = parse_table_normalized(normalized_data, dialect, max_rows);
 
@@ -359,7 +371,8 @@ fn score_dialect_with_normalized_data(
         return (DialectScore::zero(dialect.clone()), table);
     }
 
-    let mut score = DialectScore::new(dialect.clone(), &table);
+    let type_score = calculate_type_score(&table, buffers);
+    let mut score = DialectScore::new(dialect.clone(), &table, type_score);
 
     // Apply quote evidence scoring using pre-computed counts and cached boundary counts
     let quote_multiplier =
@@ -756,9 +769,6 @@ pub fn score_all_dialects_with_best_table(
         .into_iter()
         .collect();
 
-    // Pre-compute quote boundary counts for all delimiters in one pass
-    let boundary_counts = QuoteBoundaryCounts::new(data, &delimiters);
-
     // Detect and normalize line endings once for all dialects
     // All dialects in the list have the same line terminator (set by detect_line_terminator)
     let line_terminator = dialects
@@ -767,29 +777,38 @@ pub fn score_all_dialects_with_best_table(
             d.line_terminator
         });
     let normalized_data = super::potential_dialects::normalize_line_endings(data, line_terminator);
+    let normalized_bytes: &[u8] = normalized_data.as_ref();
 
-    // Score all dialects and keep track of the best table
-    let mut best_table: Option<Table> = None;
-    let mut best_gamma: f64 = f64::NEG_INFINITY;
+    // Pre-compute quote boundary counts for all delimiters in one pass (on normalized data)
+    let boundary_counts = QuoteBoundaryCounts::new(normalized_bytes, &delimiters);
 
-    let mut scores: Vec<DialectScore> = dialects
-        .iter()
+    // Score all dialects in parallel, using per-thread reusable TypeScoreBuffers
+    let pairs: Vec<(DialectScore, Table)> = dialects
+        .par_iter()
         .map(|d| {
-            let (score, table) = score_dialect_with_normalized_data(
-                &normalized_data,
-                d,
-                max_rows,
-                &quote_counts,
-                &boundary_counts,
-            );
-            // Track the table with the highest gamma score
-            if score.gamma > best_gamma {
-                best_gamma = score.gamma;
-                best_table = Some(table);
-            }
-            score
+            BUFFERS.with(|b| {
+                score_dialect_with_normalized_data(
+                    normalized_bytes,
+                    d,
+                    max_rows,
+                    &quote_counts,
+                    &boundary_counts,
+                    &mut b.borrow_mut(),
+                )
+            })
         })
         .collect();
+
+    let best_table = pairs
+        .iter()
+        .max_by(|a, b| {
+            a.0.gamma
+                .partial_cmp(&b.0.gamma)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(_, t)| t.clone());
+
+    let mut scores: Vec<DialectScore> = pairs.into_iter().map(|(s, _)| s).collect();
 
     // Sort by gamma score descending
     scores.sort_by(|a, b| {

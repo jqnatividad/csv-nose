@@ -2,6 +2,7 @@
 //!
 //! This module provides the qsv-sniffer compatible API.
 
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -240,15 +241,17 @@ impl Sniffer {
 
         // Create a view of the table without structural preamble
         // (comment preamble rows are already stripped from data)
-        let effective_table = if structural_preamble > 0 && table.rows.len() > structural_preamble {
-            let mut et = crate::tum::table::Table::new();
-            et.rows = table.rows[structural_preamble..].to_vec();
-            et.field_counts = table.field_counts[structural_preamble..].to_vec();
-            et.update_modal_field_count();
-            et
-        } else {
-            table.clone()
-        };
+        // Use Cow to avoid cloning in the common no-preamble case
+        let effective_table: Cow<'_, Table> =
+            if structural_preamble > 0 && table.rows.len() > structural_preamble {
+                let mut et = Table::new();
+                et.rows = table.rows[structural_preamble..].to_vec();
+                et.field_counts = table.field_counts[structural_preamble..].to_vec();
+                et.update_modal_field_count();
+                Cow::Owned(et)
+            } else {
+                Cow::Borrowed(table)
+            };
 
         // Detect header on the effective table (pass total_preamble_rows for Header metadata)
         let header = detect_header(&effective_table, &score.dialect, total_preamble_rows);
@@ -271,7 +274,7 @@ impl Sniffer {
             dt.update_modal_field_count();
             dt
         } else {
-            effective_table
+            effective_table.into_owned()
         };
 
         // Infer types for each column
