@@ -757,7 +757,7 @@ mod tests {
         );
         let cursor = std::io::Cursor::new(data);
         let mut sniffer = Sniffer::new();
-        // Records(200_000): estimated_size = 200_000 * 1024 ≈ 200 MB, clamped to MAX_RECORDS_BYTES.
+        // Records(200_000): estimated_size = 200_000 * 1024 > MAX_RECORDS_BYTES (100 MB), clamped to MAX_RECORDS_BYTES.
         sniffer.sample_size(SampleSize::Records(200_000));
         let result = sniffer.sniff_reader(cursor);
         assert!(
