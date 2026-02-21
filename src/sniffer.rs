@@ -19,6 +19,9 @@ use crate::tum::score::{DialectScore, find_best_dialect, score_all_dialects_with
 use crate::tum::table::{Table, parse_table};
 use crate::tum::type_detection::infer_column_types;
 
+/// Maximum buffer size for `SampleSize::Records` mode (100 MB).
+const MAX_RECORDS_BYTES: usize = 100 * 1024 * 1024;
+
 /// CSV dialect sniffer using the Table Uniformity Method.
 ///
 /// # Example
@@ -188,14 +191,23 @@ impl Sniffer {
                 Ok(buffer)
             }
             SampleSize::All => {
+                const MAX_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB hard cap
                 let mut buffer = Vec::new();
-                reader.read_to_end(&mut buffer)?;
+                (&mut reader).take(MAX_BYTES).read_to_end(&mut buffer)?;
+                if buffer.len() as u64 == MAX_BYTES {
+                    let mut probe = [0u8; 1];
+                    if reader.read(&mut probe)? > 0 {
+                        eprintln!(
+                            "warning: input exceeds 1 GB; sniffing on truncated sample — results may be inaccurate"
+                        );
+                    }
+                }
                 Ok(buffer)
             }
             SampleSize::Records(n) => {
                 // For records, we read enough to capture n records
                 // Estimate ~1KB per record as a starting point, with a minimum
-                let estimated_size = (n * 1024).max(8192);
+                let estimated_size = n.saturating_mul(1024).clamp(8192, MAX_RECORDS_BYTES);
                 let mut buffer = vec![0u8; estimated_size];
                 let bytes_read = reader.read(&mut buffer)?;
                 buffer.truncate(bytes_read);
@@ -206,11 +218,21 @@ impl Sniffer {
                     let newlines = bytecount::count(&buffer, b'\n');
                     if newlines < n {
                         // Read more data
-                        let additional = (n - newlines) * 2048;
+                        let additional = (n - newlines).saturating_mul(2048).min(MAX_RECORDS_BYTES);
                         let mut more = vec![0u8; additional];
                         let more_read = reader.read(&mut more)?;
                         more.truncate(more_read);
                         buffer.extend(more);
+                    }
+                }
+
+                if buffer.len() >= MAX_RECORDS_BYTES {
+                    let mut probe = [0u8; 1];
+                    if reader.read(&mut probe)? > 0 {
+                        eprintln!(
+                            "warning: Records sample capped at 100 MB; \
+                             sniff result may be approximate for very large inputs"
+                        );
                     }
                 }
 
@@ -716,5 +738,34 @@ mod tests {
 
         // Raw: 16 + 12 = 28 bytes for 2 rows = 14 bytes avg
         assert_eq!(metadata.avg_record_len, 14);
+    }
+
+    #[test]
+    fn test_records_mode_cap_boundary_ok() {
+        // Verify that a reader with more than MAX_RECORDS_BYTES of valid CSV is handled
+        // gracefully and returns Ok. Uses a cycling pattern to avoid a large literal in
+        // test source; the runtime still materializes ~100 MB via collect().
+        // We supply MAX_RECORDS_BYTES + one extra row so the probe-read finds data and
+        // the truncation warning fires, but the sniff still succeeds.
+        let row = b"col1,col2,col3\n1,2,3\n"; // 21 bytes, valid CSV pair
+        let total = MAX_RECORDS_BYTES + row.len();
+        let data: Vec<u8> = row.iter().copied().cycle().take(total).collect();
+        // Confirm the test data actually exceeds the cap so the probe path is exercised.
+        assert!(
+            data.len() > MAX_RECORDS_BYTES,
+            "test data must exceed MAX_RECORDS_BYTES to exercise probe-read path"
+        );
+        let cursor = std::io::Cursor::new(data);
+        let mut sniffer = Sniffer::new();
+        // Records(200_000): estimated_size = 200_000 * 1024 > MAX_RECORDS_BYTES (100 MB), clamped to MAX_RECORDS_BYTES.
+        sniffer.sample_size(SampleSize::Records(200_000));
+        let result = sniffer.sniff_reader(cursor);
+        assert!(
+            result.is_ok(),
+            "sniff should succeed at cap boundary: {result:?}"
+        );
+        // Note: the eprintln! truncation warning cannot be captured in a standard Rust
+        // unit test without process-level stderr redirection. The probe-read path is
+        // exercised by virtue of data.len() > MAX_RECORDS_BYTES (asserted above).
     }
 }
