@@ -227,10 +227,13 @@ impl Sniffer {
                 }
 
                 if buffer.len() >= MAX_RECORDS_BYTES {
-                    eprintln!(
-                        "warning: Records sample capped at 100 MB; \
-                         sniff result may be approximate for very large inputs"
-                    );
+                    let mut probe = [0u8; 1];
+                    if reader.read(&mut probe)? > 0 {
+                        eprintln!(
+                            "warning: Records sample capped at 100 MB; \
+                             sniff result may be approximate for very large inputs"
+                        );
+                    }
                 }
 
                 Ok(buffer)
@@ -735,5 +738,26 @@ mod tests {
 
         // Raw: 16 + 12 = 28 bytes for 2 rows = 14 bytes avg
         assert_eq!(metadata.avg_record_len, 14);
+    }
+
+    #[test]
+    fn test_records_mode_cap_boundary_ok() {
+        // Verify that a reader with more than MAX_RECORDS_BYTES of valid CSV is handled
+        // gracefully and returns Ok. Uses a cycling pattern so no large Vec allocation
+        // is needed in test source; the sniffer itself allocates up to MAX_RECORDS_BYTES.
+        // We supply MAX_RECORDS_BYTES + one extra row so the probe-read finds data and
+        // the truncation warning fires, but the sniff still succeeds.
+        let row = b"col1,col2,col3\n1,2,3\n"; // 21 bytes, valid CSV pair
+        let total = MAX_RECORDS_BYTES + row.len();
+        let data: Vec<u8> = row.iter().copied().cycle().take(total).collect();
+        let cursor = std::io::Cursor::new(data);
+        let mut sniffer = Sniffer::new();
+        // n large enough that estimated_size clamps to MAX_RECORDS_BYTES
+        sniffer.sample_size(SampleSize::Records(200_000));
+        let result = sniffer.sniff_reader(cursor);
+        assert!(
+            result.is_ok(),
+            "sniff should succeed at cap boundary: {result:?}"
+        );
     }
 }
