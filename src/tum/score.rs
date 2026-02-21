@@ -787,8 +787,9 @@ const fn delimiter_priority(delimiter: u8) -> u8 {
         b',' => 10, // Comma - most common, highest priority
         b';' => 9,  // Semicolon - common in European locales
         b'\t' => 8, // Tab - TSV files
-        b'|' => 8,  // Pipe - common in data exports; intentionally tied with tab (both are
+        // Pipe - common in data exports; intentionally tied with tab (both are
         // respectable standard delimiters); tie resolved by iteration order
+        b'|' => 8,
         b':' => 4, // Colon - sometimes used, but also appears in timestamps
         b'^' => 3, // Caret - rare
         b'~' => 3, // Tilde - rare
@@ -964,8 +965,8 @@ mod tests {
         // Genuine single-quote quoting: quote appears at field start after delimiter/newline
         let data = b",'field', 'next'\n";
         let count = quote_opening_boundary_count(data, b'\'', b',');
-        // delimiter→' at position 0→1, and space→ doesn't count; ', ' → '
-        // windows: [b',', b'\''] at start → +1; [b' ', b'\''] is space, not delimiter → 0
+        // First window [b',', b'\''] is delimiter→quote → +1 opening boundary
+        // Second window [b' ', b'\''] is space→quote (space not a delimiter here) → 0
         assert!(
             count >= 1,
             "expected at least 1 opening boundary, got {count}"
