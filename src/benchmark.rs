@@ -10,7 +10,11 @@ use std::io::{self, BufRead};
 use std::path::{Path, PathBuf};
 
 /// Expected dialect from annotation file.
+///
+/// Note: `encoding`, `escape_char`, and `line_terminator` are parsed from the annotation file
+/// but not yet used in validation. They are retained for potential future accuracy comparisons.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ExpectedDialect {
     pub file_name: String,
     pub encoding: String,
