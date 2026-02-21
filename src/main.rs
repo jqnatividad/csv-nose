@@ -379,7 +379,8 @@ fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
 }
 
 fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
-    static mut HEADER_PRINTED: bool = false;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static HEADER_PRINTED: AtomicBool = AtomicBool::new(false);
 
     let quote_str = match metadata.dialect.quote {
         Quote::None => "none".to_string(),
@@ -387,13 +388,10 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
     };
 
     // CSV header (print only for first file or could be configured)
-    unsafe {
-        if !HEADER_PRINTED {
-            println!(
-                "file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
-            );
-            HEADER_PRINTED = true;
-        }
+    if !HEADER_PRINTED.swap(true, Ordering::SeqCst) {
+        println!(
+            "file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
+        );
     }
 
     println!(

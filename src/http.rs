@@ -137,13 +137,14 @@ fn fetch_full(url: &str, max_bytes: Option<usize>) -> Result<FetchResult, HttpEr
     let body = response.into_body();
     let mut reader = body.into_reader();
 
+    const MAX_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB hard cap
     let data = if let Some(bytes) = max_bytes {
         let mut buf = Vec::with_capacity(bytes);
         reader.take(bytes as u64).read_to_end(&mut buf)?;
         buf
     } else {
         let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)?;
+        reader.take(MAX_BYTES).read_to_end(&mut buf)?;
         buf
     };
 
