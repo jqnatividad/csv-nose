@@ -202,9 +202,10 @@ impl Sniffer {
                 Ok(buffer)
             }
             SampleSize::Records(n) => {
+                const MAX_RECORDS_BYTES: usize = 100 * 1024 * 1024; // 100 MB cap per read
                 // For records, we read enough to capture n records
                 // Estimate ~1KB per record as a starting point, with a minimum
-                let estimated_size = n.saturating_mul(1024).max(8192);
+                let estimated_size = n.saturating_mul(1024).min(MAX_RECORDS_BYTES).max(8192);
                 let mut buffer = vec![0u8; estimated_size];
                 let bytes_read = reader.read(&mut buffer)?;
                 buffer.truncate(bytes_read);
@@ -215,7 +216,7 @@ impl Sniffer {
                     let newlines = bytecount::count(&buffer, b'\n');
                     if newlines < n {
                         // Read more data
-                        let additional = (n - newlines).saturating_mul(2048);
+                        let additional = (n - newlines).saturating_mul(2048).min(MAX_RECORDS_BYTES);
                         let mut more = vec![0u8; additional];
                         let more_read = reader.read(&mut more)?;
                         more.truncate(more_read);
