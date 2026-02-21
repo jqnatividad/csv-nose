@@ -6,6 +6,11 @@ pub enum SampleSize {
     /// Sample a specific number of bytes.
     Bytes(usize),
     /// Read the entire file.
+    ///
+    /// # Warning
+    ///
+    /// This loads the entire file into memory. For large files (e.g., >100 MB), prefer
+    /// [`SampleSize::Bytes`] with a reasonable limit to avoid excessive memory usage.
     All,
 }
 

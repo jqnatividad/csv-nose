@@ -15,6 +15,8 @@ pub struct Table {
     pub field_counts: Vec<usize>,
     /// Cached modal (most common) field count, computed during parsing.
     cached_modal_field_count: usize,
+    /// Cached frequency of the modal field count.
+    cached_modal_field_count_freq: usize,
 }
 
 impl Table {
@@ -24,6 +26,7 @@ impl Table {
             rows: Vec::new(),
             field_counts: Vec::new(),
             cached_modal_field_count: 0,
+            cached_modal_field_count_freq: 0,
         }
     }
 
@@ -46,14 +49,15 @@ impl Table {
         self.cached_modal_field_count
     }
 
-    /// Compute the modal field count from field_counts.
+    /// Compute the modal field count and its frequency from field_counts.
     /// Called internally after parsing or when constructing tables manually.
     ///
     /// Optimized: Uses a frequency array for small field counts (≤256),
     /// falling back to HashMap for unusually wide tables.
-    fn compute_modal_field_count(field_counts: &[usize]) -> usize {
+    /// Returns `(modal_field_count, frequency)`.
+    fn compute_modal_field_count(field_counts: &[usize]) -> (usize, usize) {
         if field_counts.is_empty() {
-            return 0;
+            return (0, 0);
         }
 
         let max_fc = field_counts.iter().copied().max().unwrap_or(0);
@@ -76,7 +80,7 @@ impl Table {
                     best_count = count;
                 }
             }
-            best_fc
+            (best_fc, best_count)
         } else {
             // Fallback to HashMap for unusually wide tables
             let mut counts: HashMap<usize, usize> = HashMap::with_capacity(field_counts.len());
@@ -91,13 +95,21 @@ impl Table {
                 .max_by(|(fc_a, count_a), (fc_b, count_b)| {
                     count_a.cmp(count_b).then_with(|| fc_a.cmp(fc_b))
                 })
-                .map_or(0, |(fc, _)| fc)
+                .map_or((0, 0), |(fc, count)| (fc, count))
         }
     }
 
-    /// Update the cached modal field count. Call after modifying field_counts.
+    /// Update the cached modal field count and its frequency. Call after modifying field_counts.
     pub fn update_modal_field_count(&mut self) {
-        self.cached_modal_field_count = Self::compute_modal_field_count(&self.field_counts);
+        let (modal, freq) = Self::compute_modal_field_count(&self.field_counts);
+        self.cached_modal_field_count = modal;
+        self.cached_modal_field_count_freq = freq;
+    }
+
+    /// Returns the frequency of the modal (most common) field count.
+    #[inline]
+    pub const fn modal_field_count_freq(&self) -> usize {
+        self.cached_modal_field_count_freq
     }
 
     /// Returns the minimum field count.

@@ -64,8 +64,7 @@ pub fn calculate_tau_1(table: &Table) -> f64 {
     let transition_score = 1.0 - (transitions as f64 / (n - 1) as f64);
 
     // 3. Mode dominance: fraction of rows with the modal field count
-    let mode = table.modal_field_count();
-    let mode_count = table.field_counts.iter().filter(|&&fc| fc == mode).count();
+    let mode_count = table.modal_field_count_freq();
     let mode_score = mode_count as f64 / n as f64;
 
     // Combine components with weights
