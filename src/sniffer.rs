@@ -19,6 +19,9 @@ use crate::tum::score::{DialectScore, find_best_dialect, score_all_dialects_with
 use crate::tum::table::{Table, parse_table};
 use crate::tum::type_detection::infer_column_types;
 
+/// Maximum buffer size for `SampleSize::Records` mode (100 MB).
+const MAX_RECORDS_BYTES: usize = 100 * 1024 * 1024;
+
 /// CSV dialect sniffer using the Table Uniformity Method.
 ///
 /// # Example
@@ -202,10 +205,9 @@ impl Sniffer {
                 Ok(buffer)
             }
             SampleSize::Records(n) => {
-                const MAX_RECORDS_BYTES: usize = 100 * 1024 * 1024; // 100 MB cap per read
                 // For records, we read enough to capture n records
                 // Estimate ~1KB per record as a starting point, with a minimum
-                let estimated_size = n.saturating_mul(1024).min(MAX_RECORDS_BYTES).max(8192);
+                let estimated_size = n.saturating_mul(1024).clamp(8192, MAX_RECORDS_BYTES);
                 let mut buffer = vec![0u8; estimated_size];
                 let bytes_read = reader.read(&mut buffer)?;
                 buffer.truncate(bytes_read);
@@ -222,6 +224,13 @@ impl Sniffer {
                         more.truncate(more_read);
                         buffer.extend(more);
                     }
+                }
+
+                if buffer.len() >= MAX_RECORDS_BYTES {
+                    eprintln!(
+                        "warning: Records sample capped at 100 MB; \
+                         sniff result may be approximate for very large inputs"
+                    );
                 }
 
                 Ok(buffer)
