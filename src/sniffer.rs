@@ -191,6 +191,11 @@ impl Sniffer {
                 const MAX_BYTES: u64 = 1024 * 1024 * 1024; // 1 GB hard cap
                 let mut buffer = Vec::new();
                 reader.take(MAX_BYTES).read_to_end(&mut buffer)?;
+                if buffer.len() as u64 == MAX_BYTES {
+                    eprintln!(
+                        "warning: input exceeds 1 GB; sniffing on truncated sample — results may be inaccurate"
+                    );
+                }
                 Ok(buffer)
             }
             SampleSize::Records(n) => {

@@ -145,6 +145,11 @@ fn fetch_full(url: &str, max_bytes: Option<usize>) -> Result<FetchResult, HttpEr
     } else {
         let mut buf = Vec::new();
         reader.take(MAX_BYTES).read_to_end(&mut buf)?;
+        if buf.len() as u64 == MAX_BYTES {
+            eprintln!(
+                "warning: HTTP response exceeds 1 GB; sniffing on truncated sample — results may be inaccurate"
+            );
+        }
         buf
     };
 

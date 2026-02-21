@@ -388,7 +388,7 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
     };
 
     // CSV header (print only for first file or could be configured)
-    if !HEADER_PRINTED.swap(true, Ordering::SeqCst) {
+    if !HEADER_PRINTED.swap(true, Ordering::Relaxed) {
         println!(
             "file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
         );
