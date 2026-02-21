@@ -417,7 +417,52 @@ fn score_dialect_with_normalized_data(
     // Apply quote evidence scoring using pre-computed counts and cached boundary counts
     let quote_multiplier =
         quote_evidence_score_with_cached_boundaries(quote_counts, boundary_counts, dialect);
-    score.gamma *= quote_multiplier;
+
+    // Dampen the quote boost when the first row has just 1 field AND the non-modal rows
+    // exhibit diverse field counts (≥3 distinct values). This prevents JSON-content-in-
+    // unquoted-fields from triggering a false 2.2x boost: e.g. a tab-delimited file where
+    // unquoted JSON fields contain `,key"` patterns that look like opening quote boundaries
+    // for comma+doublequote. In such files the first row (tab-delimited header) has 0 commas
+    // → 1 field, and JSON data rows have wildly varying comma counts (e.g., 1, 46, 32, 19).
+    //
+    // The distinguishing check: if the rows that deviate from the modal all share the same
+    // count (like {1, 1, 1} for preamble title rows), the non-uniformity is just preamble.
+    // If the non-modal rows have ≥3 distinct field counts, the whole table is chaotically
+    // variable — a strong signal that boundaries come from field content, not real quoting.
+    let effective_multiplier =
+        if quote_multiplier > 1.5 && score.num_fields >= 5 && !score.is_uniform {
+            let first_fields = table
+                .field_counts
+                .first()
+                .copied()
+                .unwrap_or(score.num_fields);
+            if first_fields <= 1 {
+                // Count distinct field counts among non-modal rows.
+                let modal = score.num_fields;
+                let mut distinct_counts: Vec<usize> = table
+                    .field_counts
+                    .iter()
+                    .filter(|&&c| c != modal)
+                    .copied()
+                    .collect();
+                distinct_counts.sort_unstable();
+                distinct_counts.dedup();
+                let distinct_non_modal = distinct_counts.len();
+                if distinct_non_modal >= 3 {
+                    // ≥3 distinct non-modal field counts → genuinely chaotic table, not just
+                    // a small preamble. Scale boost down to 30% of excess so the correct
+                    // dialect can compete.
+                    1.0 + (quote_multiplier - 1.0) * 0.3
+                } else {
+                    quote_multiplier
+                }
+            } else {
+                quote_multiplier
+            }
+        } else {
+            quote_multiplier
+        };
+    score.gamma *= effective_multiplier;
 
     (score, table)
 }
