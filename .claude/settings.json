@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "cargo fmt -- --check 2>/dev/null; cargo fmt 2>/dev/null; exit 0"
+          },
+          {
+            "type": "command",
+            "command": "cargo clippy --quiet 2>&1 | grep -E '^(error|warning)' | head -20; exit 0"
           }
         ]
       }
