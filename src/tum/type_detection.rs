@@ -109,9 +109,10 @@ pub fn detect_cell_type(value: &str) -> Type {
     }
 
     // Check for float - gate regex with cheap string checks first.
-    // This is safe because the current FLOAT_PATTERN requires either a decimal
-    // point or an exponent marker; representations like NaN/Inf (which lack
-    // both) are not matched by FLOAT_PATTERN and do not need this path.
+    // This path is only reached after integer detection, so plain integers
+    // have already been classified and do not rely on FLOAT_PATTERN. The gate
+    // also skips representations like NaN/Inf, which lack both a decimal point
+    // and an exponent marker and are therefore not matched here.
     let has_dot = trimmed.contains('.');
     let has_exp = trimmed.contains('e') || trimmed.contains('E');
     if (has_dot || has_exp) && FLOAT_PATTERN.is_match(trimmed) {
