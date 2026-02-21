@@ -13,6 +13,12 @@ use super::type_detection::{TypeScoreBuffers, calculate_pattern_score, calculate
 use super::uniformity::{calculate_tau_0, calculate_tau_1, is_uniform};
 
 thread_local! {
+    // Each rayon worker thread owns one reusable TypeScoreBuffers.  Vec::clear()
+    // keeps the allocated capacity, so after sniffing a very-wide CSV a thread's
+    // buffer retains the high-water-mark allocation for the lifetime of the rayon
+    // pool (typically the whole process).  Overhead is small
+    // (max_cols × Type::COUNT × 2 × sizeof(usize) per thread) but worth noting
+    // for long-running library users processing a mix of narrow and wide files.
     static BUFFERS: RefCell<TypeScoreBuffers> = RefCell::new(TypeScoreBuffers::new());
 }
 
@@ -799,14 +805,20 @@ pub fn score_all_dialects_with_best_table(
         })
         .collect();
 
+    // Keep first-maximum semantics: when two dialects tie on gamma, the one
+    // with the lower index (earlier in `dialects`) wins — matching the
+    // original sequential `if score.gamma > best_gamma` loop which used
+    // strict `>` so the first winner was never displaced by a tie.
     let best_table = pairs
         .iter()
-        .max_by(|a, b| {
+        .enumerate()
+        .max_by(|(i, a), (j, b)| {
             a.0.gamma
                 .partial_cmp(&b.0.gamma)
                 .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| j.cmp(i)) // lower index wins on tie
         })
-        .map(|(_, t)| t.clone());
+        .map(|(_, (_, t))| t.clone());
 
     let mut scores: Vec<DialectScore> = pairs.into_iter().map(|(s, _)| s).collect();
 

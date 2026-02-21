@@ -108,7 +108,10 @@ pub fn detect_cell_type(value: &str) -> Type {
         return Type::Boolean;
     }
 
-    // Check for float - gate regex with cheap string checks first
+    // Check for float - gate regex with cheap string checks first.
+    // This is safe because the current FLOAT_PATTERN requires either a decimal
+    // point or an exponent marker; representations like NaN/Inf (which lack
+    // both) are not matched by FLOAT_PATTERN and do not need this path.
     let has_dot = trimmed.contains('.');
     let has_exp = trimmed.contains('e') || trimmed.contains('E');
     if (has_dot || has_exp) && FLOAT_PATTERN.is_match(trimmed) {
@@ -141,6 +144,12 @@ pub fn detect_cell_type(value: &str) -> Type {
 pub struct TypeScoreBuffers {
     pub col_type_counts: Vec<[usize; Type::COUNT]>,
     pub col_totals: Vec<usize>,
+}
+
+impl Default for TypeScoreBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TypeScoreBuffers {
