@@ -1573,6 +1573,9 @@ mod tests {
         // values, confirming that boundary tallying is consistent between them.  A bug
         // in QuoteBoundaryCounts field accumulation would cause a discrepancy here even
         // if both paths produce internally consistent orderings.
+        // The two paths share compute_single_quote_multiplier and identical arithmetic,
+        // so results should be bit-identical (difference = 0.0).  1e-9 is a generous
+        // sentinel that would catch any real boundary-tallying divergence.
         let tolerance = 1e-9_f64;
         assert!(
             (cached_score_19.gamma - score_19.gamma).abs() < tolerance,
