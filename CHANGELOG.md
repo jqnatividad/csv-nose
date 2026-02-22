@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-02-21
+
+### Performance
+
+- Parallel dialect scoring via `rayon::par_iter` with thread-local `TypeScoreBuffers` for multi-core speedup
+- `#[inline]` on `detect_cell_type` hot path
+- Float regex gating with cheap `.contains('.')` / `.contains('e')` checks before regex evaluation
+- `TypeScoreBuffers` struct eliminates per-call heap allocations in type scoring
+- `normalize_line_endings` moved before `QuoteBoundaryCounts::new` to avoid redundant work
+- `cached_modal_field_count_freq` field on `Table` avoids repeated filter+count in `calculate_tau_1`
+- `Cow<Table>` in `build_metadata` avoids clone in the no-preamble case
+
+### Changed
+
+- Bump `clap` from 4.5.56 to 4.5.60
+- Bump `ureq` from 3.1.4 to 3.2.0
+- Bump `regex` from 1.12.2 to 1.12.3
+- Bump `tempfile` from 3.24.0 to 3.25.0
+- Rename `docs/PERFORMANCE.md` to `docs/ACCURACY.md` and update accuracy figures to v1.0.0
+
+### Fixed
+
+- CSV Wrangling accuracy improved from 87.15% to 92.74%:
+  - Fix `nsign` benchmark annotation mapping (`"nsign"` → `b'#'`, not `b'§'`)
+  - Raise pipe delimiter priority to prevent space-delimiter false positives
+  - Double-quote 2.2× density check now requires real quote density (not just boundary count)
+  - Single-quote opening boundary requirement prevents apostrophe-in-content false positives
+- Cap `Records`-mode buffer allocations at 100 MB; use probe read to avoid false-positive truncation warnings
+- Restore first-maximum tie-breaking semantics and fix related correctness issues
+- Address HIGH, MEDIUM, and LOW security audit findings
+- Dampen false quote boost from JSON content in unquoted fields
+- Fix `isco.csv` and `uniq_nl_data.csv` detection (closing-only boundary boost, space+empty-first-field penalty)
+- Fix misleading comment on float regex gate in `type_detection`
+- Correct `lib.rs` paper citation to García (2024) Table Uniformity Method
+- Fix tiebreaking threshold comment: 10% → 5% (`score_ratio > 0.95`)
+- Fix accuracy figures in `docs/BENCHMARK_DATASETS_INFO.md` (CSV Wrangling ~87%→~93%, POLLOCK 96.62%→97.30%)
+- Fix `docs/IMPLEMENTATION.md` NULL specificity weight (empty string=0.0, null-like strings=0.5)
+
+### Added
+
+- `docs/IMPLEMENTATION.md` — comprehensive algorithm reference covering all scoring details, thresholds, and design decisions
+- `docs/ACCURACY.md` — accuracy summary and known limitations (replaces `PERFORMANCE.md`, updated to v1.0.0)
+- Claude Code automations: clippy pre-tool hook, `api-compat-checker` subagent, `cargo-audit` and `benchmark` skills, benchmark regression checker subagent
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/0.8.0...v1.0.0
+
 ## [0.8.0] - 2026-01-30
 
 ### Performance
