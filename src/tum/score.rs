@@ -1226,9 +1226,16 @@ mod tests {
     fn test_hash_penalty_strict_for_small_table() {
         // Small table (10 rows, < 50 row threshold): hash penalty stays at 0.60.
         // Large table (60 rows, >= 50 row threshold): hash penalty relaxes to 0.85.
-        // For a perfectly uniform 3-field table, tau_0 and tau_1 are the same regardless
-        // of row count, so the only gamma difference between the two datasets is the
-        // delimiter penalty multiplier (0.60 vs 0.85 ≈ factor of 1.42).
+        //
+        // We use score_all_dialects (the production path) so that the full heuristic
+        // stack in score_dialect_with_normalized_data applies consistently.  The hash
+        // penalty relaxation (0.60 → 0.85) lives in compute_gamma, which is reached via
+        // both score_dialect and score_all_dialects; using score_all_dialects keeps this
+        // test consistent with test_comma_hash_penalty_fires_on_hash_delimited_data.
+        //
+        // Note: a higher row count also earns a larger row_bonus (up to +0.10 at 20 rows),
+        // so the 1.3× threshold is conservative — both the penalty and the row_bonus
+        // favour the large dataset, ensuring the direction of the assertion holds.
         let mut small_data = String::new();
         for _ in 0..10 {
             small_data.push_str("a#b#c\n");
@@ -1238,10 +1245,23 @@ mod tests {
             large_data.push_str("a#b#c\n");
         }
 
-        let hash_dialect = PotentialDialect::new(b'#', Quote::Some(b'"'), LineTerminator::LF);
+        let dialects = vec![PotentialDialect::new(
+            b'#',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
 
-        let small_score = score_dialect(small_data.as_bytes(), &hash_dialect, 200);
-        let large_score = score_dialect(large_data.as_bytes(), &hash_dialect, 200);
+        let small_scores = score_all_dialects(small_data.as_bytes(), &dialects, 200);
+        let large_scores = score_all_dialects(large_data.as_bytes(), &dialects, 200);
+
+        let small_score = small_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b'#')
+            .unwrap();
+        let large_score = large_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b'#')
+            .unwrap();
 
         // The large table gets the relaxed 0.85 penalty vs the strict 0.60 for the small
         // table.  With identical per-row uniformity, the large score must exceed the small
@@ -1281,24 +1301,46 @@ mod tests {
 
     #[test]
     fn test_space_dampening_fires_when_majority_empty_first() {
-        // Simulate a leading-space-padded format: every row starts with spaces,
-        // so splitting on space yields an empty first field.  The dampening
-        // heuristic applies 0.55× when >50% of rows have an empty first field.
-        let leading_space_data = b"  1 foo\n  2 bar\n  3 baz\n";
-        // Same logical content but no leading spaces — dampening must NOT fire.
-        let no_leading_space_data = b"1 foo\n2 bar\n3 baz\n";
-        let space_dialect = PotentialDialect::new(b' ', Quote::Some(b'"'), LineTerminator::LF);
+        // Simulate a leading-space-padded format: every row starts with a single space,
+        // so splitting on space yields an empty first field followed by two value fields
+        // (3 fields total).  The dampening heuristic applies 0.55× when >50% of rows
+        // have an empty first field.
+        //
+        // The undampened dataset uses the same delimiter and the same field count (3)
+        // but without a leading space, so no empty first field is present and dampening
+        // must NOT fire.  Equal field counts eliminate field-count as a confound so the
+        // assertion purely isolates the 0.55× multiplier.
+        //
+        // Space dampening lives in score_dialect_with_normalized_data; we therefore use
+        // score_all_dialects (the production path) rather than score_dialect so that the
+        // heuristic is actually exercised.
+        //
+        // leading:  " a b\n c d\n e f\n" → ["", "a", "b"] per row  (3 fields, empty first)
+        // baseline: "a b c\nd e f\ng h i\n" → ["a", "b", "c"] per row (3 fields, no empty)
+        let leading_space_data = b" a b\n c d\n e f\n";
+        let no_leading_space_data = b"a b c\nd e f\ng h i\n";
 
-        let dampened_score = score_dialect(leading_space_data, &space_dialect, 100);
-        let undampened_score = score_dialect(no_leading_space_data, &space_dialect, 100);
+        let dialects = vec![PotentialDialect::new(
+            b' ',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
 
-        assert!(
-            dampened_score.gamma >= 0.0,
-            "dampened gamma must be non-negative"
-        );
-        // Dampening (0.55×) must reduce the score compared to the same data without
-        // leading spaces.  The undampened dataset has the same two-field-per-row
-        // uniformity but does not trigger the empty-first-field condition.
+        let dampened_scores = score_all_dialects(leading_space_data, &dialects, 100);
+        let undampened_scores = score_all_dialects(no_leading_space_data, &dialects, 100);
+
+        let dampened_score = dampened_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b' ')
+            .unwrap();
+        let undampened_score = undampened_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b' ')
+            .unwrap();
+
+        // Dampening (0.55×) must reduce the score compared to the undampened baseline.
+        // Both datasets have identical three-field-per-row uniformity; the only scoring
+        // difference is the empty-first-field multiplier on the leading-space dataset.
         assert!(
             dampened_score.gamma < undampened_score.gamma,
             "dampening should reduce score when majority rows have empty first field; \
@@ -1451,39 +1493,40 @@ mod tests {
     #[test]
     fn test_closing_only_boost_below_threshold_no_boost() {
         // boundary_count == 19 (just below threshold of 20) → boost should NOT fire.
-        // Construct data with exactly 19 closing single-quote events and no openings,
-        // and high density.  We use a tab delimiter so there are no delimiter→quote
-        // openings; newline→quote would also be an opening, so end lines WITHOUT quote.
-        // Pattern: value'\t — quote before tab = closing; next char is not quote.
-        let mut data = Vec::new();
-        // 19 closing boundaries: `x'\t` repeated, ensure no opening boundaries
-        for _ in 0..19 {
-            data.extend_from_slice(b"x'\trest\n");
-        }
-        // Pad to raise single_density to >= 50/1000 (1 quote per ~8 bytes → ~125/1000)
-        // already satisfied since each 8-byte row has 1 quote.
-
+        // boundary_count == 20 (at threshold) → 1.10× boost SHOULD fire.
+        //
+        // Both datasets have the same total row count (25 rows) to eliminate row-count
+        // as a confound.  The only structural difference is 19 vs 20 closing boundaries.
+        //
+        // Pattern: `x'\trest\n` — quote before tab = closing boundary; quote is not
+        // adjacent to a newline or at the start of data, so no opening boundaries.
+        // `x\trest\n` — no quote, no boundary contribution.
         let tab_sq_dialect = PotentialDialect::new(b'\t', Quote::Some(b'\''), LineTerminator::LF);
-        // Use score_dialect (non-cached path) so quote_boundary_count is used.
-        let score_19 = score_dialect(&data, &tab_sq_dialect, 200);
 
-        // Now add one more row to reach boundary_count == 20+
-        data.extend_from_slice(b"x'\trest\n");
-        let score_20 = score_dialect(&data, &tab_sq_dialect, 200);
+        // 19-boundary dataset: 19 rows with a closing boundary + 6 padding rows = 25 total
+        let mut data_19 = Vec::new();
+        for _ in 0..19 {
+            data_19.extend_from_slice(b"x'\trest\n");
+        }
+        for _ in 0..6 {
+            data_19.extend_from_slice(b"x\trest\n");
+        }
 
-        assert!(
-            score_19.gamma >= 0.0,
-            "score at 19 boundaries must be non-negative"
-        );
-        assert!(
-            score_20.gamma >= 0.0,
-            "score at 20 boundaries must be non-negative"
-        );
+        // 20-boundary dataset: 20 rows with a closing boundary + 5 padding rows = 25 total
+        let mut data_20 = Vec::new();
+        for _ in 0..20 {
+            data_20.extend_from_slice(b"x'\trest\n");
+        }
+        for _ in 0..5 {
+            data_20.extend_from_slice(b"x\trest\n");
+        }
+
+        let score_19 = score_dialect(&data_19, &tab_sq_dialect, 200);
+        let score_20 = score_dialect(&data_20, &tab_sq_dialect, 200);
+
         // At exactly 20 boundaries the closing-only 1.10× boost fires; at 19 it does
         // not (falls through to the neutral 1.0 branch).  Both datasets have identical
-        // per-row structure, so the boost is the only score difference.  The 20-row
-        // dataset also has one more row of data, making the comparison conservative
-        // (we only require score_20 > score_19, not a specific ratio).
+        // row counts and per-row structure, so the boost is the only score difference.
         assert!(
             score_20.gamma > score_19.gamma,
             "closing-only boost (1.10×) should fire at boundary_count=20 but not at 19; \
