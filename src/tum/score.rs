@@ -1549,6 +1549,7 @@ mod tests {
         // non-cached path above iterates raw data directly.  Both paths share
         // compute_single_quote_multiplier, but a discrepancy in boundary tallying
         // between them would not be caught by score_dialect alone.
+        // tab_sq_dialect is still in scope: score_dialect takes &PotentialDialect, not by value.
         let dialects = vec![tab_sq_dialect];
         let cached_19 = score_all_dialects(&data_19, &dialects, 200);
         let cached_20 = score_all_dialects(&data_20, &dialects, 200);
@@ -1565,6 +1566,26 @@ mod tests {
             "closing-only boost (1.10×) should fire on cached path at boundary_count=20 but not at 19; \
              cached_19={} cached_20={}",
             cached_score_19.gamma,
+            cached_score_20.gamma
+        );
+
+        // Cross-path agreement: cached and non-cached paths must produce the same gamma
+        // values, confirming that boundary tallying is consistent between them.  A bug
+        // in QuoteBoundaryCounts field accumulation would cause a discrepancy here even
+        // if both paths produce internally consistent orderings.
+        let tolerance = 1e-9_f64;
+        assert!(
+            (cached_score_19.gamma - score_19.gamma).abs() < tolerance,
+            "cached and non-cached paths disagree on 19-boundary score: \
+             non_cached={} cached={}",
+            score_19.gamma,
+            cached_score_19.gamma
+        );
+        assert!(
+            (cached_score_20.gamma - score_20.gamma).abs() < tolerance,
+            "cached and non-cached paths disagree on 20-boundary score: \
+             non_cached={} cached={}",
+            score_20.gamma,
             cached_score_20.gamma
         );
     }
