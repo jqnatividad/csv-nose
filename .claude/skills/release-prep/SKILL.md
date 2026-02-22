@@ -23,4 +23,9 @@ Prepare a new csv-nose release. Takes an optional version number argument.
 6. Run full benchmark suite (all 5 datasets) and compare results with README.md accuracy tables
 7. Run `cargo package --list` to verify publish contents look correct
 8. Summarize all results and flag any issues before the user publishes
-9. Do NOT run `cargo publish` — leave that to the user
+9. Create a GitHub release using `gh release create`:
+   - Tag: `v{version}`
+   - Title: `v{version}`
+   - Body: the CHANGELOG.md entry for this version (Added/Changed/Fixed/Performance sections)
+   - Use `--draft` so the user can review before publishing
+10. Do NOT run `cargo publish` — leave that to the user
