@@ -28,14 +28,31 @@ thread_local! {
 struct QuoteCounts {
     double: usize,
     single: usize,
+    /// Number of `\'` (backslash + single-quote) byte pairs in the data.
+    backslash_single: usize,
+    /// Number of `\"` (backslash + double-quote) byte pairs in the data.
+    backslash_double: usize,
     data_len: usize,
 }
 
 impl QuoteCounts {
     fn new(data: &[u8]) -> Self {
+        let mut backslash_single = 0usize;
+        let mut backslash_double = 0usize;
+        for window in data.windows(2) {
+            if window[0] == b'\\' {
+                if window[1] == b'\'' {
+                    backslash_single += 1;
+                } else if window[1] == b'"' {
+                    backslash_double += 1;
+                }
+            }
+        }
         Self {
             double: bytecount::count(data, b'"'),
             single: bytecount::count(data, b'\''),
+            backslash_single,
+            backslash_double,
             data_len: data.len(),
         }
     }
@@ -336,11 +353,20 @@ fn compute_gamma(
         b':' => 0.90,               // Colon - moderate penalty (often in timestamps)
         b' ' => 0.75,               // Space - significant penalty (often in text)
         b'^' | b'~' => 0.80,        // Rare delimiters
-        b'#' => 0.60,               // Hash - often comment marker
-        b'&' => 0.60,               // Ampersand - very rare
-        0xA7 => 0.78,               // Section sign (§) - rare but legitimate delimiter
-        b'/' => 0.65,               // Forward slash - rare, often in paths/dates
-        _ => 0.70,                  // Unknown - penalty
+        // Hash - often a comment marker, but can be a legitimate delimiter.
+        // For large uniform tables with ≥3 fields, reduce the penalty: the
+        // heavy evidence of consistent multi-field parsing overrides the prior.
+        b'#' => {
+            if field_count >= 3 && num_rows >= 50 {
+                0.85
+            } else {
+                0.60
+            }
+        }
+        b'&' => 0.60, // Ampersand - very rare
+        0xA7 => 0.78, // Section sign (§) - rare but legitimate delimiter
+        b'/' => 0.65, // Forward slash - rare, often in paths/dates
+        _ => 0.70,    // Unknown - penalty
     };
 
     // Combine all factors
@@ -462,7 +488,51 @@ fn score_dialect_with_normalized_data(
         } else {
             quote_multiplier
         };
+    // Two-layer penalty for space delimiter when most rows have an empty first field.
+    // When leading spaces pad row numbers (e.g. `     1 # 'addr' # 'city'`):
+    //   (a) The spaces between the delimiter and adjacent quote characters look like
+    //       opening/closing quote boundaries, falsely triggering the 2.2× quote boost.
+    //       Hard-cap the boost to ≤ 1.05 to suppress these spurious boundary signals.
+    //   (b) The many split-on-space fields inflate field_bonus and field_count metrics.
+    //       Multiply the combined gamma by 0.55 to offset this inflation.
+    // Legitimate space-delimited files start their rows with actual content, not spaces,
+    // so their first field is never empty and this penalty never fires.
+    let effective_multiplier = if dialect.delimiter == b' ' && !table.rows.is_empty() {
+        let empty_first_count = table
+            .rows
+            .iter()
+            .filter(|row| row.first().is_none_or(|f| f.is_empty()))
+            .count();
+        if empty_first_count * 2 > table.rows.len() {
+            // Cap the quote-evidence boost and fold in a 0.55 base penalty.
+            effective_multiplier.min(1.05) * 0.55
+        } else {
+            effective_multiplier
+        }
+    } else {
+        effective_multiplier
+    };
     score.gamma *= effective_multiplier;
+
+    // Penalize comma when ' # ' (space-hash-space) appears consistently in the first
+    // parsed field.  This pattern is a strong signal that '#' is the true separator used
+    // with padded fields (e.g. `     1 # 'addr' # 'city'`), and that comma is splitting
+    // on an incidental comma *inside* a '#'-delimited field (e.g. `city, state`).
+    // The space-on-both-sides requirement excludes hex colours (`#FF0000`), CSS IDs
+    // (`#header`), and other embedded '#' that are not separator uses.
+    if dialect.delimiter == b',' && score.num_fields == 2 && !table.rows.is_empty() {
+        let hash_sep_count = table
+            .rows
+            .iter()
+            .filter(|row| row.first().is_some_and(|f| f.trim_start().contains(" # ")))
+            .count();
+        if hash_sep_count * 10 > table.rows.len() * 9 {
+            // More than 90% of rows have ' # ' in field-0: comma is very likely
+            // splitting inside '#'-delimited rows.  Apply a strong penalty so that
+            // '#' dialects can outscore comma even after singlequote boosts.
+            score.gamma *= 0.82;
+        }
+    }
 
     (score, table)
 }
@@ -632,9 +702,30 @@ fn quote_evidence_score_with_cached_boundaries(
             } else if double_density >= min_density_threshold {
                 // Double quotes present - penalize single-quote detection
                 0.90
+            } else if quote_counts.backslash_single > 0
+                && quote_counts.backslash_double == 0
+                && boundary_count == 0
+            {
+                // Backslash-escaped single quotes (e.g. `Ships\' engineers`) with no
+                // double-quote evidence — single-quote is the dialect's escape target.
+                // Boost must exceed 5% to escape the quote-preference tiebreaker zone.
+                1.10
+            } else if quote_counts.double == 0
+                && opening_count == 0
+                && boundary_count >= 20
+                && single_density >= 50
+            {
+                // Only closing single-quote boundaries (row-end `'\n`) but no opening
+                // boundaries (delimiter → quote).  This occurs when single-quote quoting
+                // is used with a space between the delimiter and the quote character
+                // (e.g. `# 'addr' # 'city'`): the adjacency scan misses the opening
+                // `# '` pair because of the intermediate space.  The very high
+                // single-quote density and substantial closing-boundary evidence
+                // strongly suggest the file is genuinely single-quote-quoted.
+                1.10
             } else if boundary_count == 0 && single_density > 0 {
-                // Single quotes present but not at boundaries - likely just text content
-                // Slight penalty to prefer double-quote as default
+                // Single quotes in content but not at any boundaries (no opening,
+                // no closing).  Likely just apostrophes in text content.
                 0.95
             } else {
                 1.0
@@ -737,9 +828,30 @@ fn quote_evidence_score_with_data(
             } else if double_density >= min_density_threshold {
                 // Double quotes present - penalize single-quote detection
                 0.90
+            } else if quote_counts.backslash_single > 0
+                && quote_counts.backslash_double == 0
+                && boundary_count == 0
+            {
+                // Backslash-escaped single quotes (e.g. `Ships\' engineers`) with no
+                // double-quote evidence — single-quote is the dialect's escape target.
+                // Boost must exceed 5% to escape the quote-preference tiebreaker zone.
+                1.10
+            } else if quote_counts.double == 0
+                && opening_count == 0
+                && boundary_count >= 20
+                && single_density >= 50
+            {
+                // Only closing single-quote boundaries (row-end `'\n`) but no opening
+                // boundaries (delimiter → quote).  This occurs when single-quote quoting
+                // is used with a space between the delimiter and the quote character
+                // (e.g. `# 'addr' # 'city'`): the adjacency scan misses the opening
+                // `# '` pair because of the intermediate space.  The very high
+                // single-quote density and substantial closing-boundary evidence
+                // strongly suggest the file is genuinely single-quote-quoted.
+                1.10
             } else if boundary_count == 0 && single_density > 0 {
-                // Single quotes present but not at boundaries - likely just text content
-                // Slight penalty to prefer double-quote as default
+                // Single quotes in content but not at any boundaries (no opening,
+                // no closing).  Likely just apostrophes in text content.
                 0.95
             } else {
                 1.0
