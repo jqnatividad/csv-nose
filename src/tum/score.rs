@@ -1224,31 +1224,35 @@ mod tests {
 
     #[test]
     fn test_hash_penalty_strict_for_small_table() {
-        // Small table (< 50 rows): hash penalty should remain at 0.60.
-        // Build 10 rows with 3 '#'-delimited fields so the table is uniform,
-        // then compare its gamma against an equivalent comma table.
-        let mut data = String::new();
+        // Small table (10 rows, < 50 row threshold): hash penalty stays at 0.60.
+        // Large table (60 rows, >= 50 row threshold): hash penalty relaxes to 0.85.
+        // For a perfectly uniform 3-field table, tau_0 and tau_1 are the same regardless
+        // of row count, so the only gamma difference between the two datasets is the
+        // delimiter penalty multiplier (0.60 vs 0.85 ≈ factor of 1.42).
+        let mut small_data = String::new();
         for _ in 0..10 {
-            data.push_str("a#b#c\n");
+            small_data.push_str("a#b#c\n");
         }
-        let bytes = data.as_bytes();
+        let mut large_data = String::new();
+        for _ in 0..60 {
+            large_data.push_str("a#b#c\n");
+        }
 
         let hash_dialect = PotentialDialect::new(b'#', Quote::Some(b'"'), LineTerminator::LF);
-        let comma_dialect = PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF);
 
-        let hash_score = score_dialect(bytes, &hash_dialect, 200);
-        let comma_score = score_dialect(bytes, &comma_dialect, 200);
+        let small_score = score_dialect(small_data.as_bytes(), &hash_dialect, 200);
+        let large_score = score_dialect(large_data.as_bytes(), &hash_dialect, 200);
 
-        // Hash should be significantly penalised; comma (1-field parse) should be
-        // competitive or higher because the hash table carries a 0.60 multiplier.
-        // At minimum verify the hash score is <= the comma score or within a factor
-        // that reflects the 0.60 penalty (hash uniformity_score * 0.60 vs comma 0.5 penalty).
+        // The large table gets the relaxed 0.85 penalty vs the strict 0.60 for the small
+        // table.  With identical per-row uniformity, the large score must exceed the small
+        // score by at least the ratio 0.85/0.60 ≈ 1.42.  We use a conservative bound of
+        // 1.3 to tolerate minor variation in type scoring across different row counts.
         assert!(
-            hash_score.gamma < comma_score.gamma * 3.0,
-            "hash score should be significantly suppressed for a small table; \
-             hash={} comma={}",
-            hash_score.gamma,
-            comma_score.gamma
+            large_score.gamma > small_score.gamma * 1.3,
+            "large hash table (0.85 penalty) should outscore small hash table (0.60 penalty) \
+             by factor ≥ 1.3; small={} large={}",
+            small_score.gamma,
+            large_score.gamma
         );
     }
 
@@ -1278,21 +1282,30 @@ mod tests {
     #[test]
     fn test_space_dampening_fires_when_majority_empty_first() {
         // Simulate a leading-space-padded format: every row starts with spaces,
-        // so splitting on space yields an empty first field.
-        let data = b"  1 foo\n  2 bar\n  3 baz\n";
+        // so splitting on space yields an empty first field.  The dampening
+        // heuristic applies 0.55× when >50% of rows have an empty first field.
+        let leading_space_data = b"  1 foo\n  2 bar\n  3 baz\n";
+        // Same logical content but no leading spaces — dampening must NOT fire.
+        let no_leading_space_data = b"1 foo\n2 bar\n3 baz\n";
         let space_dialect = PotentialDialect::new(b' ', Quote::Some(b'"'), LineTerminator::LF);
-        let tab_dialect = PotentialDialect::new(b'\t', Quote::Some(b'"'), LineTerminator::LF);
 
-        let space_score = score_dialect(data, &space_dialect, 100);
-        let tab_score = score_dialect(data, &tab_dialect, 100);
+        let dampened_score = score_dialect(leading_space_data, &space_dialect, 100);
+        let undampened_score = score_dialect(no_leading_space_data, &space_dialect, 100);
 
-        // Space is the correct delimiter here but the dampening should apply.
-        // The key property to test is that the gamma is finite and non-zero.
-        assert!(space_score.gamma >= 0.0, "gamma must be non-negative");
-        // Dampening must cap and reduce: space score should be well below
-        // what it would be without the 0.55 penalty (hard to test directly,
-        // so verify it does not catastrophically dominate over tab on empty data).
-        let _ = tab_score; // used for context; primary assertion is dampening applied
+        assert!(
+            dampened_score.gamma >= 0.0,
+            "dampened gamma must be non-negative"
+        );
+        // Dampening (0.55×) must reduce the score compared to the same data without
+        // leading spaces.  The undampened dataset has the same two-field-per-row
+        // uniformity but does not trigger the empty-first-field condition.
+        assert!(
+            dampened_score.gamma < undampened_score.gamma,
+            "dampening should reduce score when majority rows have empty first field; \
+             dampened={} undampened={}",
+            dampened_score.gamma,
+            undampened_score.gamma
+        );
     }
 
     #[test]
@@ -1319,24 +1332,57 @@ mod tests {
     #[test]
     fn test_comma_hash_penalty_fires_on_hash_delimited_data() {
         // A '#'-delimited file where comma splits on an incidental comma inside a field.
-        // e.g. `     1 # 'city, state' # 'zip'` — comma sees 2 fields but field-0
-        // contains ' # '.
-        let data = b"1 # foo, bar # baz\n2 # foo, bar # baz\n3 # foo, bar # baz\n\
-                     4 # foo, bar # baz\n5 # foo, bar # baz\n6 # foo, bar # baz\n\
-                     7 # foo, bar # baz\n8 # foo, bar # baz\n9 # foo, bar # baz\n\
-                     10 # foo, bar # baz\n";
+        // Comma sees 2 fields: field-0 = "foo # baz", which contains ' # '.
+        // When >90% of rows have ' # ' in field-0 AND num_fields == 2, the 0.82× penalty fires.
+        //
+        // The penalty lives in score_dialect_with_normalized_data (the path exercised by
+        // score_all_dialects), NOT in the score_dialect path.  We therefore use
+        // score_all_dialects for both datasets so the penalty is consistently applied
+        // (or not) on both paths.
+        let penalized_data = b"foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\n";
 
-        let dialects = vec![
-            PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF),
-            PotentialDialect::new(b'#', Quote::Some(b'"'), LineTerminator::LF),
-        ];
+        // Structurally identical (2 fields per row, 10 rows, all-text) but field-0
+        // has no ' # ' — the penalty must NOT fire here.
+        let clean_data = b"foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\n";
 
-        let scores = score_all_dialects(data, &dialects, 100);
-        let comma_score = scores.iter().find(|s| s.dialect.delimiter == b',').unwrap();
+        let dialects = vec![PotentialDialect::new(
+            b',',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
 
-        // Comma should be penalised (0.82×) when ' # ' dominates field-0
-        // AND num_fields == 2.  Verify it produces a reduced (but non-zero) score.
-        assert!(comma_score.gamma >= 0.0, "comma gamma must be non-negative");
+        let penalized_scores = score_all_dialects(penalized_data, &dialects, 100);
+        let clean_scores = score_all_dialects(clean_data, &dialects, 100);
+
+        let penalized_score = penalized_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b',')
+            .unwrap();
+        let clean_score = clean_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b',')
+            .unwrap();
+
+        assert!(
+            penalized_score.gamma >= 0.0,
+            "comma gamma must be non-negative"
+        );
+        // The 0.82× penalty must reduce the comma score compared to the clean dataset.
+        // Both datasets have identical two-field-per-row uniformity; the only scoring
+        // difference is the ' # ' penalty on the penalized dataset.
+        assert!(
+            penalized_score.gamma < clean_score.gamma,
+            "comma penalty (0.82×) should reduce score when ' # ' dominates field-0; \
+             penalized={} clean={}",
+            penalized_score.gamma,
+            clean_score.gamma
+        );
     }
 
     #[test]
@@ -1357,25 +1403,35 @@ mod tests {
     #[test]
     fn test_backslash_single_boost_applied() {
         // File with backslash-escaped single quotes and no double quotes.
-        // boundary_count == 0 because the quote chars are not at field boundaries.
-        let data = b"it\\'s fine,next\ndon\\'t stop,go\nwe\\'re here,now\n";
+        // boundary_count == 0 because the quote chars are not at field boundaries
+        // (they appear inside words, not adjacent to the comma delimiter).
+        // This triggers the 1.10× backslash-escape boost branch.
+        let data_with_backslash = b"it\\'s fine,next\ndon\\'t stop,go\nwe\\'re here,now\n";
+
+        // Structurally identical dataset with no apostrophes — no boost fires, multiplier = 1.0.
+        let data_no_apostrophe = b"its fine,next\ndont stop,go\nwere here,now\n";
 
         let sq_dialect = PotentialDialect::new(b',', Quote::Some(b'\''), LineTerminator::LF);
-        let dq_dialect = PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF);
 
-        let sq_score = score_dialect(data, &sq_dialect, 100);
-        let dq_score = score_dialect(data, &dq_dialect, 100);
+        let boosted_score = score_dialect(data_with_backslash, &sq_dialect, 100);
+        let baseline_score = score_dialect(data_no_apostrophe, &sq_dialect, 100);
 
-        // The backslash-escape boost (1.10×) should raise sq_score above what it
-        // would be without any quote evidence boost, helping it beat dq in this context.
-        // Verify sq gets a non-trivial score.
         assert!(
-            sq_score.gamma > 0.0,
+            boosted_score.gamma > 0.0,
             "single-quote dialect must score positively; gamma={}",
-            sq_score.gamma
+            boosted_score.gamma
         );
-        // And with no double quotes at all, dq should not massively dominate.
-        let _ = dq_score;
+        // The 1.10× backslash-escape boost must make the score net-positive relative
+        // to the no-apostrophe baseline (which gets only the neutral 1.0 multiplier).
+        // Both datasets have identical two-field-per-row uniformity and similar type
+        // scores; the only scoring difference is the quote-evidence multiplier.
+        assert!(
+            boosted_score.gamma > baseline_score.gamma,
+            "backslash-escape boost (1.10×) should raise sq score above no-apostrophe baseline; \
+             boosted={} baseline={}",
+            boosted_score.gamma,
+            baseline_score.gamma
+        );
     }
 
     #[test]
@@ -1415,9 +1471,6 @@ mod tests {
         data.extend_from_slice(b"x'\trest\n");
         let score_20 = score_dialect(&data, &tab_sq_dialect, 200);
 
-        // Both must be non-negative; we cannot assert an exact multiplier without
-        // mocking internals, but we verify the function does not panic and that
-        // scores are in a sane range.
         assert!(
             score_19.gamma >= 0.0,
             "score at 19 boundaries must be non-negative"
@@ -1425,6 +1478,18 @@ mod tests {
         assert!(
             score_20.gamma >= 0.0,
             "score at 20 boundaries must be non-negative"
+        );
+        // At exactly 20 boundaries the closing-only 1.10× boost fires; at 19 it does
+        // not (falls through to the neutral 1.0 branch).  Both datasets have identical
+        // per-row structure, so the boost is the only score difference.  The 20-row
+        // dataset also has one more row of data, making the comparison conservative
+        // (we only require score_20 > score_19, not a specific ratio).
+        assert!(
+            score_20.gamma > score_19.gamma,
+            "closing-only boost (1.10×) should fire at boundary_count=20 but not at 19; \
+             score_19={} score_20={}",
+            score_19.gamma,
+            score_20.gamma
         );
     }
 }
