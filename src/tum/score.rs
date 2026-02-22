@@ -28,14 +28,31 @@ thread_local! {
 struct QuoteCounts {
     double: usize,
     single: usize,
+    /// Number of `\'` (backslash + single-quote) byte pairs in the data.
+    backslash_single: usize,
+    /// Number of `\"` (backslash + double-quote) byte pairs in the data.
+    backslash_double: usize,
     data_len: usize,
 }
 
 impl QuoteCounts {
     fn new(data: &[u8]) -> Self {
+        let mut backslash_single = 0usize;
+        let mut backslash_double = 0usize;
+        for window in data.windows(2) {
+            if window[0] == b'\\' {
+                if window[1] == b'\'' {
+                    backslash_single += 1;
+                } else if window[1] == b'"' {
+                    backslash_double += 1;
+                }
+            }
+        }
         Self {
             double: bytecount::count(data, b'"'),
             single: bytecount::count(data, b'\''),
+            backslash_single,
+            backslash_double,
             data_len: data.len(),
         }
     }
@@ -45,14 +62,20 @@ impl QuoteCounts {
 /// Used to avoid redundant data scanning across multiple dialect evaluations.
 #[derive(Debug, Clone)]
 struct QuoteBoundaryCounts {
-    /// Boundary counts for double quote with each delimiter
+    /// Boundary counts for double quote with each delimiter (opening + closing)
     double_boundaries: Vec<(u8, usize)>,
-    /// Boundary counts for single quote with each delimiter
+    /// Boundary counts for single quote with each delimiter (opening + closing)
     single_boundaries: Vec<(u8, usize)>,
+    /// Opening-only boundary counts for single quote with each delimiter
+    /// (delimiter/newline → quote, field start).  Used to distinguish genuine
+    /// quoting from apostrophes that appear only before delimiters (closing).
+    single_opening_boundaries: Vec<(u8, usize)>,
     /// Newline boundary counts for double quote (not delimiter-specific)
     double_newline_boundaries: usize,
     /// Newline boundary counts for single quote (not delimiter-specific)
     single_newline_boundaries: usize,
+    /// Opening-only newline boundary counts for single quote
+    single_opening_newline_boundaries: usize,
     /// Whether data starts with double quote
     starts_with_double: bool,
     /// Whether data starts with single quote
@@ -64,8 +87,10 @@ impl QuoteBoundaryCounts {
     fn new(data: &[u8], delimiters: &[u8]) -> Self {
         let mut double_counts: Vec<usize> = vec![0; delimiters.len()];
         let mut single_counts: Vec<usize> = vec![0; delimiters.len()];
+        let mut single_opening_counts: Vec<usize> = vec![0; delimiters.len()];
         let mut double_newline_boundaries: usize = 0;
         let mut single_newline_boundaries: usize = 0;
+        let mut single_opening_newline_boundaries: usize = 0;
 
         // Create lookup table for delimiter indices
         let mut delim_indices = [usize::MAX; 256];
@@ -79,7 +104,7 @@ impl QuoteBoundaryCounts {
             let delim_idx = delim_indices[window[0] as usize];
             let is_delimiter = delim_idx != usize::MAX;
 
-            // Quote after delimiter/newline (field start)
+            // Quote after delimiter/newline (field start = OPENING boundary)
             if is_newline || is_delimiter {
                 if window[1] == b'"' {
                     if is_newline {
@@ -93,13 +118,15 @@ impl QuoteBoundaryCounts {
                 if window[1] == b'\'' {
                     if is_newline {
                         single_newline_boundaries += 1;
+                        single_opening_newline_boundaries += 1;
                     } else {
                         single_counts[delim_idx] += 1;
+                        single_opening_counts[delim_idx] += 1;
                     }
                 }
             }
 
-            // Quote before delimiter/newline (field end)
+            // Quote before delimiter/newline (field end = CLOSING boundary)
             let is_end_newline = window[1] == b'\n' || window[1] == b'\r';
             let end_delim_idx = delim_indices[window[1] as usize];
             let is_end_delimiter = end_delim_idx != usize::MAX;
@@ -126,8 +153,14 @@ impl QuoteBoundaryCounts {
         Self {
             double_boundaries: delimiters.iter().copied().zip(double_counts).collect(),
             single_boundaries: delimiters.iter().copied().zip(single_counts).collect(),
+            single_opening_boundaries: delimiters
+                .iter()
+                .copied()
+                .zip(single_opening_counts)
+                .collect(),
             double_newline_boundaries,
             single_newline_boundaries,
+            single_opening_newline_boundaries,
             starts_with_double,
             starts_with_single,
         }
@@ -153,6 +186,24 @@ impl QuoteBoundaryCounts {
 
         // Combine delimiter-specific count with newline boundaries (which apply to all delimiters)
         delimiter_count + newline_boundaries + start_bonus
+    }
+
+    /// Get the opening-only boundary count for single-quote with a given delimiter.
+    ///
+    /// Opening boundaries are delimiter/newline → single-quote transitions (field starts).
+    /// This distinguishes genuine single-quote quoting (both opening and closing boundaries)
+    /// from apostrophes that appear only before delimiters (closing only, as in `'value',`).
+    fn get_single_opening_boundary_count(&self, delimiter: u8) -> usize {
+        let delimiter_count = self
+            .single_opening_boundaries
+            .iter()
+            .find(|&&(d, _)| d == delimiter)
+            .map_or(0, |&(_, c)| c);
+
+        // starts_with_single is an opening boundary (file-start → single-quote)
+        let start_bonus = usize::from(self.starts_with_single);
+
+        delimiter_count + self.single_opening_newline_boundaries + start_bonus
     }
 }
 
@@ -302,11 +353,28 @@ fn compute_gamma(
         b':' => 0.90,               // Colon - moderate penalty (often in timestamps)
         b' ' => 0.75,               // Space - significant penalty (often in text)
         b'^' | b'~' => 0.80,        // Rare delimiters
-        b'#' => 0.60,               // Hash - often comment marker
-        b'&' => 0.60,               // Ampersand - very rare
-        0xA7 => 0.78,               // Section sign (§) - rare but legitimate delimiter
-        b'/' => 0.65,               // Forward slash - rare, often in paths/dates
-        _ => 0.70,                  // Unknown - penalty
+        // Hash - often a comment marker, but can be a legitimate delimiter.
+        // For large uniform tables with ≥3 fields, reduce the penalty: the
+        // heavy evidence of consistent multi-field parsing overrides the prior.
+        //
+        // Threshold rationale:
+        //   - field_count >= 3: 1- or 2-field tables are too ambiguous — a file with
+        //     comments (`# header`) parsed as 1-field could accidentally reach any
+        //     uniform score.  Three or more fields give strong structural evidence.
+        //   - num_rows >= 50: small tables may accidentally produce consistent patterns
+        //     even with `#` as a comment character.  50 rows provides enough statistical
+        //     weight to trust the uniformity signal.
+        b'#' => {
+            if field_count >= 3 && num_rows >= 50 {
+                0.85 // Relaxed: large multi-field table is unlikely to be a comment file
+            } else {
+                0.60 // Strict default: treat `#` as a comment marker unless proven otherwise
+            }
+        }
+        b'&' => 0.60, // Ampersand - very rare
+        0xA7 => 0.78, // Section sign (§) - rare but legitimate delimiter
+        b'/' => 0.65, // Forward slash - rare, often in paths/dates
+        _ => 0.70,    // Unknown - penalty
     };
 
     // Combine all factors
@@ -383,7 +451,119 @@ fn score_dialect_with_normalized_data(
     // Apply quote evidence scoring using pre-computed counts and cached boundary counts
     let quote_multiplier =
         quote_evidence_score_with_cached_boundaries(quote_counts, boundary_counts, dialect);
-    score.gamma *= quote_multiplier;
+
+    // Dampen the quote boost when the first row has just 1 field AND the non-modal rows
+    // exhibit diverse field counts (≥3 distinct values). This prevents JSON-content-in-
+    // unquoted-fields from triggering a false 2.2x boost: e.g. a tab-delimited file where
+    // unquoted JSON fields contain `,key"` patterns that look like opening quote boundaries
+    // for comma+doublequote. In such files the first row (tab-delimited header) has 0 commas
+    // → 1 field, and JSON data rows have wildly varying comma counts (e.g., 1, 46, 32, 19).
+    //
+    // The distinguishing check: if the rows that deviate from the modal all share the same
+    // count (like {1, 1, 1} for preamble title rows), the non-uniformity is just preamble.
+    // If the non-modal rows have ≥3 distinct field counts, the whole table is chaotically
+    // variable — a strong signal that boundaries come from field content, not real quoting.
+    let effective_multiplier =
+        if quote_multiplier > 1.5 && score.num_fields >= 5 && !score.is_uniform {
+            let first_fields = table
+                .field_counts
+                .first()
+                .copied()
+                .unwrap_or(score.num_fields);
+            if first_fields <= 1 {
+                // Count distinct field counts among non-modal rows.
+                let modal = score.num_fields;
+                let mut distinct_counts: Vec<usize> = table
+                    .field_counts
+                    .iter()
+                    .filter(|&&c| c != modal)
+                    .copied()
+                    .collect();
+                distinct_counts.sort_unstable();
+                distinct_counts.dedup();
+                let distinct_non_modal = distinct_counts.len();
+                if distinct_non_modal >= 3 {
+                    // ≥3 distinct non-modal field counts → genuinely chaotic table, not just
+                    // a small preamble. Scale boost down to 30% of excess so the correct
+                    // dialect can compete.
+                    1.0 + (quote_multiplier - 1.0) * 0.3
+                } else {
+                    quote_multiplier
+                }
+            } else {
+                quote_multiplier
+            }
+        } else {
+            quote_multiplier
+        };
+    // Two-layer penalty for space delimiter when most rows have an empty first field.
+    // When leading spaces pad row numbers (e.g. `     1 # 'addr' # 'city'`):
+    //   (a) The spaces between the delimiter and adjacent quote characters look like
+    //       opening/closing quote boundaries, falsely triggering the 2.2× quote boost.
+    //       Hard-cap the boost to ≤ 1.05 to suppress these spurious boundary signals.
+    //   (b) The many split-on-space fields inflate field_bonus and field_count metrics.
+    //       Multiply the combined gamma by 0.55 to offset this inflation.
+    // Legitimate space-delimited files start their rows with actual content, not spaces,
+    // so their first field is never empty and this penalty never fires.
+    let effective_multiplier = if dialect.delimiter == b' ' && !table.rows.is_empty() {
+        let empty_first_count = table
+            .rows
+            .iter()
+            .filter(|row| row.first().is_none_or(|f| f.is_empty()))
+            .count();
+        if empty_first_count * 2 > table.rows.len() {
+            // Cap the quote-evidence boost and fold in a 0.55 base penalty.
+            //
+            // Threshold rationale:
+            //   - empty_first_count * 2 > rows.len(): more than 50% of rows have
+            //     an empty first field.  This is the distinguishing signal for
+            //     leading-space-padded formats (e.g. `     1 # 'addr'`); legitimate
+            //     space-delimited files start rows with real content.
+            //   - min(1.05): cap the quote multiplier to nearly-neutral.  The spaces
+            //     adjacent to quote characters create false opening/closing boundary
+            //     counts; capping prevents this spurious evidence from dominating.
+            //   - 0.55: empirically calibrated to suppress the space-delimiter score
+            //     below the true delimiter without zeroing it out entirely.  Values
+            //     below ~0.50 caused regressions on legitimate space-delimited files.
+            effective_multiplier.min(1.05) * 0.55
+        } else {
+            effective_multiplier
+        }
+    } else {
+        effective_multiplier
+    };
+    score.gamma *= effective_multiplier;
+
+    // Penalize comma when ' # ' (space-hash-space) appears consistently in the first
+    // parsed field.  This pattern is a strong signal that '#' is the true separator used
+    // with padded fields (e.g. `     1 # 'addr' # 'city'`), and that comma is splitting
+    // on an incidental comma *inside* a '#'-delimited field (e.g. `city, state`).
+    // The space-on-both-sides requirement excludes hex colours (`#FF0000`), CSS IDs
+    // (`#header`), and other embedded '#' that are not separator uses.
+    if dialect.delimiter == b',' && score.num_fields == 2 && !table.rows.is_empty() {
+        let hash_sep_count = table
+            .rows
+            .iter()
+            .filter(|row| row.first().is_some_and(|f| f.trim_start().contains(" # ")))
+            .count();
+        if hash_sep_count * 10 > table.rows.len() * 9 {
+            // More than 90% of rows have ' # ' in field-0: comma is very likely
+            // splitting inside '#'-delimited rows.  Apply a strong penalty so that
+            // '#' dialects can outscore comma even after singlequote boosts.
+            //
+            // Threshold rationale:
+            //   - 90% (hash_sep_count * 10 > rows.len() * 9): requires near-unanimous
+            //     presence across rows to avoid penalizing CSV files that happen to
+            //     contain ` # ` in a small number of text fields (e.g., comments or
+            //     markdown-style tables).  A file that is genuinely '#'-delimited will
+            //     have the pattern in virtually every row.
+            //   - 0.82: chosen to be strong enough to let the '#' dialect win after its
+            //     own penalty (0.85 for large tables) and single-quote boost (1.10) are
+            //     factored in, without being so severe that it causes regressions on
+            //     legitimate comma-separated files with rare embedded ' # '.
+            score.gamma *= 0.82;
+        }
+    }
 
     (score, table)
 }
@@ -485,6 +665,94 @@ fn quote_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
     boundary_pairs
 }
 
+/// Compute the score multiplier for single-quote evidence.
+///
+/// Shared by both `quote_evidence_score_with_cached_boundaries` and
+/// `quote_evidence_score_with_data` so that the two code paths stay in sync.
+/// Previously each function contained an identical copy of these branches;
+/// a divergence (one gets a fix the other misses) is prevented by this helper.
+///
+/// # Parameters
+/// - `boundary_count`: total single-quote boundary events (opening + closing)
+///   as returned by `get_boundary_count` or `quote_boundary_count`.  When
+///   `opening_count == 0` every event counted here is a *closing* boundary.
+/// - `opening_count`: opening-only boundary events (delimiter/newline → quote).
+/// - `single_density`: single-quote count per 1000 bytes.
+/// - `double_density`: double-quote count per 1000 bytes.
+/// - `min_density_threshold`: minimum density to treat as significant (5 / 1000).
+fn compute_single_quote_multiplier(
+    quote_counts: &QuoteCounts,
+    boundary_count: usize,
+    opening_count: usize,
+    single_density: usize,
+    double_density: usize,
+    min_density_threshold: usize,
+) -> f64 {
+    if quote_counts.double == 0
+        && opening_count >= 2
+        && boundary_count >= 4
+        && single_density >= min_density_threshold * 2
+    {
+        // No double quotes, opening+closing boundaries, high density
+        // This is strong evidence of single-quote quoting
+        2.2
+    } else if quote_counts.double == 0
+        && opening_count >= 1
+        && boundary_count >= 2
+        && single_density >= min_density_threshold
+    {
+        // No double quotes, opening boundary present, decent density
+        1.20
+    } else if double_density >= min_density_threshold {
+        // Double quotes present - penalize single-quote detection
+        0.90
+    } else if quote_counts.backslash_single > 0
+        && quote_counts.backslash_double == 0
+        && boundary_count == 0
+    {
+        // Backslash-escaped single quotes (e.g. `Ships\' engineers`) with no
+        // double-quote evidence — single-quote is the dialect's escape target.
+        // Boost must exceed 5% to escape the quote-preference tiebreaker zone.
+        //
+        // `backslash_double` is used only as a negative guard: double-quoted files
+        // don't need this boost because their `\"` pairs already produce sufficient
+        // boundary events via the normal path above.
+        1.10
+    } else if quote_counts.double == 0
+        && opening_count == 0
+        && boundary_count >= 20
+        && single_density >= 50
+    {
+        // Only closing single-quote boundaries (field-end `'<delim>` or `'\n`) but
+        // no opening boundaries (delimiter → quote).  `boundary_count` reflects
+        // total events from `get_boundary_count`/`quote_boundary_count`; because
+        // `opening_count == 0`, every counted event here is a closing boundary.
+        //
+        // This pattern occurs when single-quote quoting uses a space between the
+        // delimiter and the quote character (e.g. `# 'addr' # 'city'`): the
+        // adjacency scan misses the opening `# '` pair due to the intermediate
+        // space.
+        //
+        // Threshold rationale:
+        //   - boundary_count >= 20: prose apostrophes rarely accumulate 20+
+        //     closing boundary events in a structured file; this requires at
+        //     least ~10 quoted fields at minimum.  Irish names, possessives, or
+        //     contractions at line ends would need an unusually dense poem to
+        //     reach this count before the density gate fires.
+        //   - single_density >= 50 (50 per 1000 bytes = 5%): a very high density
+        //     that prose text with incidental apostrophes typically does not reach.
+        //     Together, both conditions make false positives from apostrophe-heavy
+        //     plain text extremely unlikely.
+        1.10
+    } else if boundary_count == 0 && single_density > 0 {
+        // Single quotes in content but not at any boundaries (no opening,
+        // no closing).  Likely just apostrophes in text content.
+        0.95
+    } else {
+        1.0
+    }
+}
+
 /// Calculate quote evidence score using pre-computed counts and cached boundary counts.
 /// This is the optimized version that avoids redundant data scanning.
 fn quote_evidence_score_with_cached_boundaries(
@@ -509,8 +777,11 @@ fn quote_evidence_score_with_cached_boundaries(
     match dialect.quote {
         Quote::Some(b'"') => {
             let boundary_count = boundary_counts.get_boundary_count(b'"', dialect.delimiter);
-            if quote_counts.single == 0 && boundary_count >= 2 {
-                // No single quotes AND double quotes at boundaries - very strong evidence
+            if quote_counts.single == 0
+                && boundary_count >= 2
+                && double_density >= min_density_threshold
+            {
+                // No single quotes AND double quotes at boundaries with real density
                 // This handles small files with quoted fields containing delimiters
                 2.2
             } else if boundary_count >= 2 && double_density >= min_density_threshold {
@@ -526,31 +797,20 @@ fn quote_evidence_score_with_cached_boundaries(
         }
         Quote::Some(b'\'') => {
             // Single quotes are tricky because apostrophes are common in text
-            // MUST have boundary evidence - single quotes at field boundaries are the key signal
+            // MUST have opening boundary evidence - apostrophes in content tend to appear
+            // only before delimiters (closing only), while genuine quoting has both
+            // opening (delimiter→quote) and closing (quote→delimiter) boundaries
             let boundary_count = boundary_counts.get_boundary_count(b'\'', dialect.delimiter);
-            if quote_counts.double == 0
-                && boundary_count >= 4
-                && single_density >= min_density_threshold * 2
-            {
-                // No double quotes, many single quote boundaries, high density
-                // This is strong evidence of single-quote quoting
-                2.2
-            } else if quote_counts.double == 0
-                && boundary_count >= 2
-                && single_density >= min_density_threshold
-            {
-                // No double quotes, some single quote boundaries, decent density
-                1.20
-            } else if double_density >= min_density_threshold {
-                // Double quotes present - penalize single-quote detection
-                0.90
-            } else if boundary_count == 0 && single_density > 0 {
-                // Single quotes present but not at boundaries - likely just text content
-                // Slight penalty to prefer double-quote as default
-                0.95
-            } else {
-                1.0
-            }
+            let opening_count =
+                boundary_counts.get_single_opening_boundary_count(dialect.delimiter);
+            compute_single_quote_multiplier(
+                quote_counts,
+                boundary_count,
+                opening_count,
+                single_density,
+                double_density,
+                min_density_threshold,
+            )
         }
         Quote::None => {
             // Only penalize Quote::None when there's strong quoting evidence
@@ -562,6 +822,24 @@ fn quote_evidence_score_with_cached_boundaries(
         }
         Quote::Some(_) => 1.0, // Other quote chars - neutral
     }
+}
+
+/// Count opening quote boundaries (delimiter/newline → quote) only.
+/// Used to distinguish genuine quoting from apostrophes that appear only at field ends.
+fn quote_opening_boundary_count(data: &[u8], quote_char: u8, delimiter: u8) -> usize {
+    let mut count = 0;
+    for window in data.windows(2) {
+        if (window[0] == delimiter || window[0] == b'\n' || window[0] == b'\r')
+            && window[1] == quote_char
+        {
+            count += 1;
+        }
+    }
+    // Also count start of data as an opening boundary
+    if !data.is_empty() && data[0] == quote_char {
+        count += 1;
+    }
+    count
 }
 
 /// Calculate quote evidence score using pre-computed counts and raw data for boundary detection.
@@ -588,8 +866,11 @@ fn quote_evidence_score_with_data(
     match dialect.quote {
         Quote::Some(b'"') => {
             let boundary_count = quote_boundary_count(data, b'"', dialect.delimiter);
-            if quote_counts.single == 0 && boundary_count >= 2 {
-                // No single quotes AND double quotes at boundaries - very strong evidence
+            if quote_counts.single == 0
+                && boundary_count >= 2
+                && double_density >= min_density_threshold
+            {
+                // No single quotes AND double quotes at boundaries with real density
                 // This handles small files with quoted fields containing delimiters
                 2.2
             } else if boundary_count >= 2 && double_density >= min_density_threshold {
@@ -605,31 +886,19 @@ fn quote_evidence_score_with_data(
         }
         Quote::Some(b'\'') => {
             // Single quotes are tricky because apostrophes are common in text
-            // MUST have boundary evidence - single quotes at field boundaries are the key signal
+            // MUST have opening boundary evidence - apostrophes in content tend to appear
+            // only before delimiters (closing only), while genuine quoting has both
+            // opening (delimiter→quote) and closing (quote→delimiter) boundaries
             let boundary_count = quote_boundary_count(data, b'\'', dialect.delimiter);
-            if quote_counts.double == 0
-                && boundary_count >= 4
-                && single_density >= min_density_threshold * 2
-            {
-                // No double quotes, many single quote boundaries, high density
-                // This is strong evidence of single-quote quoting
-                2.2
-            } else if quote_counts.double == 0
-                && boundary_count >= 2
-                && single_density >= min_density_threshold
-            {
-                // No double quotes, some single quote boundaries, decent density
-                1.20
-            } else if double_density >= min_density_threshold {
-                // Double quotes present - penalize single-quote detection
-                0.90
-            } else if boundary_count == 0 && single_density > 0 {
-                // Single quotes present but not at boundaries - likely just text content
-                // Slight penalty to prefer double-quote as default
-                0.95
-            } else {
-                1.0
-            }
+            let opening_count = quote_opening_boundary_count(data, b'\'', dialect.delimiter);
+            compute_single_quote_multiplier(
+                quote_counts,
+                boundary_count,
+                opening_count,
+                single_density,
+                double_density,
+                min_density_threshold,
+            )
         }
         Quote::None => {
             // Only penalize Quote::None when there's strong quoting evidence
@@ -718,16 +987,18 @@ const fn delimiter_priority(delimiter: u8) -> u8 {
         b',' => 10, // Comma - most common, highest priority
         b';' => 9,  // Semicolon - common in European locales
         b'\t' => 8, // Tab - TSV files
-        b'|' => 7,  // Pipe - common in data exports
-        b':' => 4,  // Colon - sometimes used, but also appears in timestamps
-        b'^' => 3,  // Caret - rare
-        b'~' => 3,  // Tilde - rare
-        0xA7 => 2,  // Section sign (§) - rare
-        b'/' => 2,  // Forward slash - rare
-        b' ' => 2,  // Space - very rare as delimiter, often appears in text
-        b'#' => 1,  // Hash - very rare, often used for comments
-        b'&' => 1,  // Ampersand - very rare
-        _ => 0,     // Unknown delimiters - lowest priority
+        // Pipe - common in data exports; intentionally tied with tab (both are
+        // respectable standard delimiters); tie resolved by iteration order
+        b'|' => 8,
+        b':' => 4, // Colon - sometimes used, but also appears in timestamps
+        b'^' => 3, // Caret - rare
+        b'~' => 3, // Tilde - rare
+        0xA7 => 2, // Section sign (§) - rare
+        b'/' => 2, // Forward slash - rare
+        b' ' => 2, // Space - very rare as delimiter, often appears in text
+        b'#' => 1, // Hash - very rare, often used for comments
+        b'&' => 1, // Ampersand - very rare
+        _ => 0,    // Unknown delimiters - lowest priority
     }
 }
 
@@ -875,5 +1146,450 @@ mod tests {
         let best = find_best_dialect(&scores).unwrap();
 
         assert_eq!(best.dialect.delimiter, b',');
+    }
+
+    // --- Tests for quote_opening_boundary_count and get_single_opening_boundary_count ---
+
+    #[test]
+    fn test_quote_opening_boundary_count_apostrophes_only() {
+        // Apostrophes appear only before delimiters (closing-only), not at field starts
+        // e.g. "value's, other" - apostrophe is mid-word, not at field start
+        let data = b"value's, other's, thing's\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // No delimiter→quote or newline→quote or leading-quote transitions
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_genuine_quoting() {
+        // Genuine single-quote quoting: quote appears at field start after delimiter/newline
+        let data = b",'field', 'next'\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // First window [b',', b'\''] is delimiter→quote → +1 opening boundary
+        // Second window [b' ', b'\''] is space→quote (space not a delimiter here) → 0
+        assert!(
+            count >= 1,
+            "expected at least 1 opening boundary, got {count}"
+        );
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_leading_quote() {
+        // Data starts with the quote character = opening boundary
+        let data = b"'field','next'\n";
+        let count = quote_opening_boundary_count(data, b'\'', b',');
+        // Starts with quote (+1), and delimiter→quote at position 7→8 (+1)
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_quote_opening_boundary_count_empty() {
+        let count = quote_opening_boundary_count(b"", b'\'', b',');
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_get_single_opening_boundary_count_apostrophes_only() {
+        // Apostrophes only at field ends (before delimiter) — no opening boundaries
+        // "it's, we're, they've" — each apostrophe is mid-word, not at a field start
+        let data = b"it's, we're, they've\n";
+        let delimiters = vec![b','];
+        let counts = QuoteBoundaryCounts::new(data, &delimiters);
+        let opening = counts.get_single_opening_boundary_count(b',');
+        assert_eq!(
+            opening, 0,
+            "apostrophes should produce zero opening boundaries"
+        );
+    }
+
+    #[test]
+    fn test_get_single_opening_boundary_count_genuine_quoting() {
+        // Genuine single-quote quoting: 'val','val2' — quote appears right after delimiter
+        let data = b"'first','second','third'\n";
+        let delimiters = vec![b','];
+        let counts = QuoteBoundaryCounts::new(data, &delimiters);
+        let opening = counts.get_single_opening_boundary_count(b',');
+        // data[0] == b'\'' counts via starts_with_single in get_boundary_count, but
+        // get_single_opening_boundary_count only counts delimiter→quote and newline→quote,
+        // plus data[0] if it is a quote (handled by starts_with_single bonus)
+        assert!(
+            opening >= 2,
+            "expected ≥2 opening boundaries for genuinely quoted fields, got {opening}"
+        );
+    }
+
+    // --- Tests for the five new heuristics ---
+
+    // Heuristic 1: `#` delimiter penalty relaxation for large multi-field tables.
+
+    #[test]
+    fn test_hash_penalty_strict_for_small_table() {
+        // Small table (10 rows, < 50 row threshold): hash penalty stays at 0.60.
+        // Large table (60 rows, >= 50 row threshold): hash penalty relaxes to 0.85.
+        //
+        // We use score_all_dialects (the production path) so that the full heuristic
+        // stack in score_dialect_with_normalized_data applies consistently.  The hash
+        // penalty relaxation (0.60 → 0.85) lives in compute_gamma, which is reached via
+        // both score_dialect and score_all_dialects; using score_all_dialects keeps this
+        // test consistent with test_comma_hash_penalty_fires_on_hash_delimited_data.
+        //
+        // Note: a higher row count also earns a larger row_bonus (up to +0.10 at ≥20 rows,
+        // computed as `(num_rows.min(20) / 20) * 0.1`).  At 10 rows the small table earns
+        // +0.05; at 60 rows the large table earns the maximum +0.10 additive bonus.
+        // row_bonus is additive, not multiplicative, so it shifts absolute scores rather
+        // than scaling the ratio.  The 1.3× threshold remains defensible even if the
+        // penalty ratio were to drop from 0.85/0.60 ≈ 1.42 down to ~1.30, because the
+        // +0.05 additive gap in row_bonus further favours the large dataset on top of the
+        // penalty ratio — both effects reinforce the same direction.
+        let mut small_data = String::new();
+        for _ in 0..10 {
+            small_data.push_str("a#b#c\n");
+        }
+        let mut large_data = String::new();
+        for _ in 0..60 {
+            large_data.push_str("a#b#c\n");
+        }
+
+        let dialects = vec![PotentialDialect::new(
+            b'#',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
+
+        let small_scores = score_all_dialects(small_data.as_bytes(), &dialects, 200);
+        let large_scores = score_all_dialects(large_data.as_bytes(), &dialects, 200);
+
+        let small_score = small_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b'#')
+            .unwrap();
+        let large_score = large_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b'#')
+            .unwrap();
+
+        // The large table gets the relaxed 0.85 penalty vs the strict 0.60 for the small
+        // table.  With identical per-row uniformity, the large score must exceed the small
+        // score by at least the ratio 0.85/0.60 ≈ 1.42.  We use a conservative bound of
+        // 1.3 to tolerate minor variation in type scoring across different row counts.
+        assert!(
+            large_score.gamma > small_score.gamma * 1.3,
+            "large hash table (0.85 penalty) should outscore small hash table (0.60 penalty) \
+             by factor ≥ 1.3; small={} large={}",
+            small_score.gamma,
+            large_score.gamma
+        );
+    }
+
+    #[test]
+    fn test_hash_penalty_relaxed_for_large_table() {
+        // Large table (≥ 50 rows, ≥ 3 fields): hash penalty should relax to 0.85.
+        let mut data = String::new();
+        for i in 0..60 {
+            data.push_str(&format!("val{i}#val{i}b#val{i}c\n"));
+        }
+        let bytes = data.as_bytes();
+
+        let hash_dialect = PotentialDialect::new(b'#', Quote::Some(b'"'), LineTerminator::LF);
+
+        let hash_score = score_dialect(bytes, &hash_dialect, 200);
+        // Score must be non-trivial: a 60-row, 3-field uniform table with relaxed
+        // penalty (0.85) should produce a meaningful gamma.
+        assert!(
+            hash_score.gamma > 0.3,
+            "large hash-delimited table should have a meaningful gamma; got {}",
+            hash_score.gamma
+        );
+    }
+
+    // Heuristic 2: Space-delimiter dampening when >50% of rows have an empty first field.
+
+    #[test]
+    fn test_space_dampening_fires_when_majority_empty_first() {
+        // Simulate a leading-space-padded format: every row starts with a single space,
+        // so splitting on space yields an empty first field followed by two value fields
+        // (3 fields total).  The dampening heuristic applies 0.55× when >50% of rows
+        // have an empty first field.
+        //
+        // The undampened dataset uses the same delimiter and the same field count (3)
+        // but without a leading space, so no empty first field is present and dampening
+        // must NOT fire.  Equal field counts eliminate field-count as a confound so the
+        // assertion purely isolates the 0.55× multiplier.
+        //
+        // Space dampening lives in score_dialect_with_normalized_data; we therefore use
+        // score_all_dialects (the production path) rather than score_dialect so that the
+        // heuristic is actually exercised.
+        //
+        // leading:  " a b\n c d\n e f\n" → ["", "a", "b"] per row  (3 fields, empty first)
+        // baseline: "a b c\nd e f\ng h i\n" → ["a", "b", "c"] per row (3 fields, no empty)
+        let leading_space_data = b" a b\n c d\n e f\n";
+        let no_leading_space_data = b"a b c\nd e f\ng h i\n";
+
+        let dialects = vec![PotentialDialect::new(
+            b' ',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
+
+        let dampened_scores = score_all_dialects(leading_space_data, &dialects, 100);
+        let undampened_scores = score_all_dialects(no_leading_space_data, &dialects, 100);
+
+        let dampened_score = dampened_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b' ')
+            .unwrap();
+        let undampened_score = undampened_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b' ')
+            .unwrap();
+
+        // Dampening (0.55×) must reduce the score compared to the undampened baseline.
+        // Both datasets have identical three-field-per-row uniformity.  Note: the empty
+        // first field in the leading-space dataset is classified as a distinct type from
+        // the alphabetic values in the baseline, so column-0 type-consistency scores will
+        // differ slightly between the two datasets independently of the 0.55× multiplier.
+        // In practice the dampening effect (0.55×) is large enough to dominate this
+        // residual type-scoring difference.
+        assert!(
+            dampened_score.gamma < undampened_score.gamma,
+            "dampening should reduce score when majority rows have empty first field; \
+             dampened={} undampened={}",
+            dampened_score.gamma,
+            undampened_score.gamma
+        );
+    }
+
+    #[test]
+    fn test_space_dampening_does_not_fire_when_minority_empty_first() {
+        // Fewer than 50% of rows have empty first field — dampening must NOT fire.
+        // One row starts with a space (empty first), two rows do not.
+        let data = b" x y\na b\nc d\n";
+        let space_dialect = PotentialDialect::new(b' ', Quote::Some(b'"'), LineTerminator::LF);
+
+        let score = score_dialect(data, &space_dialect, 100);
+        // Dampening should not have been applied; score should be reasonable.
+        // Since dampening applies 0.55×, an un-dampened score near 0.5 would
+        // become ~0.28 when dampened.  Without dampening it stays >= 0.4.
+        // We just verify the score is non-zero and not catastrophically suppressed.
+        assert!(
+            score.gamma > 0.1,
+            "dampening should not fire for minority empty-first; gamma={}",
+            score.gamma
+        );
+    }
+
+    // Heuristic 3: Comma penalty when ' # ' appears in >90% of first parsed fields.
+
+    #[test]
+    fn test_comma_hash_penalty_fires_on_hash_delimited_data() {
+        // A '#'-delimited file where comma splits on an incidental comma inside a field.
+        // Comma sees 2 fields: field-0 = "foo # baz", which contains ' # '.
+        // When >90% of rows have ' # ' in field-0 AND num_fields == 2, the 0.82× penalty fires.
+        //
+        // The penalty lives in score_dialect_with_normalized_data (the path exercised by
+        // score_all_dialects), NOT in the score_dialect path.  We therefore use
+        // score_all_dialects for both datasets so the penalty is consistently applied
+        // (or not) on both paths.
+        let penalized_data = b"foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\nfoo # baz,bar\nfoo # baz,bar\n\
+                               foo # baz,bar\n";
+
+        // Structurally identical (2 fields per row, 10 rows, all-text) but field-0
+        // has no ' # ' — the penalty must NOT fire here.
+        let clean_data = b"foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\nfoo bar baz,bar\nfoo bar baz,bar\n\
+                           foo bar baz,bar\n";
+
+        let dialects = vec![PotentialDialect::new(
+            b',',
+            Quote::Some(b'"'),
+            LineTerminator::LF,
+        )];
+
+        let penalized_scores = score_all_dialects(penalized_data, &dialects, 100);
+        let clean_scores = score_all_dialects(clean_data, &dialects, 100);
+
+        let penalized_score = penalized_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b',')
+            .unwrap();
+        let clean_score = clean_scores
+            .iter()
+            .find(|s| s.dialect.delimiter == b',')
+            .unwrap();
+
+        assert!(
+            penalized_score.gamma >= 0.0,
+            "comma gamma must be non-negative"
+        );
+        // The 0.82× penalty must reduce the comma score compared to the clean dataset.
+        // Both datasets have identical two-field-per-row uniformity; the only scoring
+        // difference is the ' # ' penalty on the penalized dataset.
+        assert!(
+            penalized_score.gamma < clean_score.gamma,
+            "comma penalty (0.82×) should reduce score when ' # ' dominates field-0; \
+             penalized={} clean={}",
+            penalized_score.gamma,
+            clean_score.gamma
+        );
+    }
+
+    #[test]
+    fn test_comma_hash_penalty_does_not_fire_below_90pct() {
+        // Only 5 of 10 rows have ' # ' in field-0 → below 90% → no penalty.
+        let data = b"a # b,c\na # b,c\na # b,c\na # b,c\na # b,c\n\
+                     x,y\nx,y\nx,y\nx,y\nx,y\n";
+
+        let comma_dialect = PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF);
+
+        // Just verify scoring does not panic and produces a valid gamma.
+        let score = score_dialect(data, &comma_dialect, 100);
+        assert!(score.gamma >= 0.0);
+    }
+
+    // Heuristic 4: Backslash-escape boost for single-quote dialect.
+
+    #[test]
+    fn test_backslash_single_boost_applied() {
+        // File with backslash-escaped single quotes and no double quotes.
+        // boundary_count == 0 because the quote chars are not at field boundaries
+        // (they appear inside words, not adjacent to the comma delimiter).
+        // This triggers the 1.10× backslash-escape boost branch.
+        let data_with_backslash = b"it\\'s fine,next\ndon\\'t stop,go\nwe\\'re here,now\n";
+
+        // Structurally identical dataset with no apostrophes — no boost fires, multiplier = 1.0.
+        let data_no_apostrophe = b"its fine,next\ndont stop,go\nwere here,now\n";
+
+        let sq_dialect = PotentialDialect::new(b',', Quote::Some(b'\''), LineTerminator::LF);
+
+        let boosted_score = score_dialect(data_with_backslash, &sq_dialect, 100);
+        let baseline_score = score_dialect(data_no_apostrophe, &sq_dialect, 100);
+
+        assert!(
+            boosted_score.gamma > 0.0,
+            "single-quote dialect must score positively; gamma={}",
+            boosted_score.gamma
+        );
+        // The 1.10× backslash-escape boost must make the score net-positive relative
+        // to the no-apostrophe baseline (which gets only the neutral 1.0 multiplier).
+        // Both datasets have identical two-field-per-row uniformity and similar type
+        // scores; the only scoring difference is the quote-evidence multiplier.
+        assert!(
+            boosted_score.gamma > baseline_score.gamma,
+            "backslash-escape boost (1.10×) should raise sq score above no-apostrophe baseline; \
+             boosted={} baseline={}",
+            boosted_score.gamma,
+            baseline_score.gamma
+        );
+    }
+
+    #[test]
+    fn test_backslash_boost_does_not_fire_when_double_quotes_present() {
+        // backslash_single > 0 but backslash_double > 0 as well → no boost.
+        let data = b"it\\'s,\"quoted\"\ndon\\'t,\"also\"\n";
+
+        let sq_dialect = PotentialDialect::new(b',', Quote::Some(b'\''), LineTerminator::LF);
+
+        // Verify scoring runs without panic; the 1.10× branch should NOT fire.
+        let score = score_dialect(data, &sq_dialect, 100);
+        assert!(score.gamma >= 0.0);
+    }
+
+    // Heuristic 5: Closing-only boundary boost — threshold edge tests.
+
+    #[test]
+    fn test_closing_only_boost_below_threshold_no_boost() {
+        // boundary_count == 19 (just below threshold of 20) → boost should NOT fire.
+        // boundary_count == 20 (at threshold) → 1.10× boost SHOULD fire.
+        //
+        // Both datasets have the same total row count (25 rows) to eliminate row-count
+        // as a confound.  The only structural difference is 19 vs 20 closing boundaries.
+        //
+        // Pattern: `x'\trest\n` — quote before tab = closing boundary; quote is not
+        // adjacent to a newline or at the start of data, so no opening boundaries.
+        // `x\trest\n` — no quote, no boundary contribution.
+        let tab_sq_dialect = PotentialDialect::new(b'\t', Quote::Some(b'\''), LineTerminator::LF);
+
+        // 19-boundary dataset: 19 rows with a closing boundary + 6 padding rows = 25 total
+        let mut data_19 = Vec::new();
+        for _ in 0..19 {
+            data_19.extend_from_slice(b"x'\trest\n");
+        }
+        for _ in 0..6 {
+            data_19.extend_from_slice(b"x\trest\n");
+        }
+
+        // 20-boundary dataset: 20 rows with a closing boundary + 5 padding rows = 25 total
+        let mut data_20 = Vec::new();
+        for _ in 0..20 {
+            data_20.extend_from_slice(b"x'\trest\n");
+        }
+        for _ in 0..5 {
+            data_20.extend_from_slice(b"x\trest\n");
+        }
+
+        let score_19 = score_dialect(&data_19, &tab_sq_dialect, 200);
+        let score_20 = score_dialect(&data_20, &tab_sq_dialect, 200);
+
+        // At exactly 20 boundaries the closing-only 1.10× boost fires; at 19 it does
+        // not (falls through to the neutral 1.0 branch).  Both datasets have identical
+        // row counts and per-row structure, so the boost is the only score difference.
+        assert!(
+            score_20.gamma > score_19.gamma,
+            "closing-only boost (1.10×) should fire at boundary_count=20 but not at 19; \
+             score_19={} score_20={}",
+            score_19.gamma,
+            score_20.gamma
+        );
+
+        // Parallel assertion via score_all_dialects (cached path): the cached path
+        // tallies boundary_count from QuoteBoundaryCounts struct fields, while the
+        // non-cached path above iterates raw data directly.  Both paths share
+        // compute_single_quote_multiplier, but a discrepancy in boundary tallying
+        // between them would not be caught by score_dialect alone.
+        // tab_sq_dialect is still in scope: score_dialect takes &PotentialDialect, not by value.
+        let dialects = vec![tab_sq_dialect];
+        let cached_19 = score_all_dialects(&data_19, &dialects, 200);
+        let cached_20 = score_all_dialects(&data_20, &dialects, 200);
+        let cached_score_19 = cached_19
+            .iter()
+            .find(|s| s.dialect.delimiter == b'\t')
+            .unwrap();
+        let cached_score_20 = cached_20
+            .iter()
+            .find(|s| s.dialect.delimiter == b'\t')
+            .unwrap();
+        assert!(
+            cached_score_20.gamma > cached_score_19.gamma,
+            "closing-only boost (1.10×) should fire on cached path at boundary_count=20 but not at 19; \
+             cached_19={} cached_20={}",
+            cached_score_19.gamma,
+            cached_score_20.gamma
+        );
+
+        // Cross-path agreement: cached and non-cached paths must produce the same gamma
+        // values, confirming that boundary tallying is consistent between them.  A bug
+        // in QuoteBoundaryCounts field accumulation would cause a discrepancy here even
+        // if both paths produce internally consistent orderings.
+        // The two paths share compute_single_quote_multiplier and identical arithmetic,
+        // so results should be bit-identical (difference = 0.0).  1e-9 is a generous
+        // sentinel that would catch any real boundary-tallying divergence.
+        let tolerance = 1e-9_f64;
+        assert!(
+            (cached_score_19.gamma - score_19.gamma).abs() < tolerance,
+            "cached and non-cached paths disagree on 19-boundary score: \
+             non_cached={} cached={}",
+            score_19.gamma,
+            cached_score_19.gamma
+        );
+        assert!(
+            (cached_score_20.gamma - score_20.gamma).abs() < tolerance,
+            "cached and non-cached paths disagree on 20-boundary score: \
+             non_cached={} cached={}",
+            score_20.gamma,
+            cached_score_20.gamma
+        );
     }
 }

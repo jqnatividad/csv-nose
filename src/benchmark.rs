@@ -261,7 +261,7 @@ fn parse_delimiter(name: &str) -> u8 {
         "space" => b' ',
         "vslash" | "pipe" => b'|',
         "colon" => b':',
-        "nsign" => 0xA7, // Section sign (§)
+        "nsign" => b'#', // Number sign (#)
         "slash" => b'/',
         _ => b',', // Default to comma
     }
@@ -435,6 +435,9 @@ mod tests {
         assert_eq!(parse_delimiter("space"), b' ');
         assert_eq!(parse_delimiter("vslash"), b'|');
         assert_eq!(parse_delimiter("colon"), b':');
+        // "nsign" is the CSVsniffer annotation name for number sign (#, 0x23).
+        // It must NOT map to 0xA7 (§, section sign), which is a different Unicode character.
+        assert_eq!(parse_delimiter("nsign"), b'#');
     }
 
     #[test]
