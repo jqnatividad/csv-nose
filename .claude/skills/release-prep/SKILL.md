@@ -27,11 +27,12 @@ Prepare a new csv-nose release. Takes an optional version number argument.
    - Tag: `v{version}`
    - Title: `v{version}`
    - Use `--draft` so the user can review before publishing
-   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file) or inline via `--notes`. For the inline approach, substitute the actual version number for `{version}` (e.g. `0.9.0`) in the shell variable and awk pattern:
+   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file and delete it afterwards) or inline via `--notes`. For the inline approach, set `VERSION` to the actual version number (e.g. `0.9.0`) before running:
      ```bash
-     VERSION="{version}"  # replace with actual version, e.g. 0.9.0
+     VERSION="0.9.0"  # ← replace this with the actual version
      --notes "$(awk "/## v$VERSION/{f=1; print; next} f && /## v[0-9]/{exit} f" CHANGELOG.md)"
      ```
+     If using `--notes-file`, remember to delete the temp file after the `gh release create` command completes.
      Do NOT use `--generate-notes` (that pulls from PR history, not CHANGELOG).
    - Before running `gh release create`, ensure the tag exists and is pushed. Create an annotated tag if it doesn't exist locally, then push it:
      ```
