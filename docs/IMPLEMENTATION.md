@@ -117,7 +117,7 @@ type_score = mean(column_score for all columns)
 pattern_score = mean(specificity_weight for modal type of each column)
 ```
 
-Type specificity weights: `DateTime`=1.0, `Date`=0.9, `Float`=1.0, `Unsigned`/`Signed`=1.0, `Boolean`=1.0, `Text`=0.1, `NULL`=0.0
+Type specificity weights: `DateTime`=1.0, `Date`=0.9, `Float`=1.0, `Unsigned`/`Signed`=1.0, `Boolean`=1.0, `Text`=0.1, null-like strings (`"NULL"`, `"NA"`, etc.)=0.5, empty string=0.0
 
 Contributes 0.1× to gamma; rewards files with structured data types over free-form text.
 
@@ -164,7 +164,7 @@ Then multiplied by `quote_multiplier` (0.90–2.2×) from quote evidence scoring
 |-----------|---------|-------------------|
 | `,` `;` `\t` | 1.00 | — |
 | `\|` | 0.98 | — |
-| `:` | 0.90 | — |
+| `:` | 0.90 | — *(vestigial — `:` is excluded from candidates; see Section 9)* |
 | `^` `~` | 0.80 | — |
 | `§` (0xA7) | 0.78 | — |
 | ` ` | 0.75 | — |
@@ -210,7 +210,7 @@ Opening boundary requirement guards against apostrophes in text content (which p
 | No boundaries at all + single quotes present | **0.95×** |
 | Otherwise | 1.0× |
 
-The closing-only 1.10× case handles space-separated quote styles (e.g., `# 'addr' # 'city'`) where the space between the delimiter and the quote character prevents the adjacency scan from detecting the opening boundary.
+The closing-only 1.10× case handles hash-delimited data with space-padded fields (e.g., `# 'addr' # 'city'`) where the space between the `#` delimiter and the `'` quote character prevents the adjacency scan from detecting an opening boundary. The opening boundary scan requires the delimiter and quote to be immediately adjacent (no intervening whitespace), so `# '` registers as a closing boundary after the preceding field ends but not as an opening boundary for the next field.
 
 ### No-quote multiplier rules (`Quote::None`)
 
@@ -239,7 +239,7 @@ Our `find_best_dialect` (`src/tum/score.rs`):
 
 - Compute `score_ratio = min_gamma / max_gamma` for each pair being compared
 - If `score_ratio > 0.95` (scores within 5%), apply priority ordering:
-  1. Delimiter priority (higher = preferred): `,`=10, `;`=9, `\t`=8, `|`=8, `:`=4, `^`=3, `~`=3, `§`=2, `/`=2, ` `=2, `#`=1, `&`=1
+  1. Delimiter priority (higher = preferred): `,`=10, `;`=9, `\t`=8, `|`=8, `:`=4 *(vestigial — excluded from candidates)*, `^`=3, `~`=3, `§`=2, `/`=2, ` `=2, `#`=1, `&`=1
   2. Quote priority (higher = preferred): `"`=3, `'`=2, `None`=1
   3. If both priorities tie, use raw gamma
 - If all non-zero dialects produce single-field tables, apply priority ordering regardless of score gap (fallback for files that can't be parsed with any delimiter)
