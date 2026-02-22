@@ -134,7 +134,7 @@ No change in detection accuracy.
 
 ### Added
 
-- `PERFORMANCE.md` documenting detection accuracy, known limitations, and workarounds
+- `ACCURACY.md` documenting detection accuracy, known limitations, and workarounds
 
 ### Changed
 

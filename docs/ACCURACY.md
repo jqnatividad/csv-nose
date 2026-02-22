@@ -1,6 +1,4 @@
-# Performance and Known Limitations
-
-> **Note:** This document reflects csv-nose v0.4.0.
+# Accuracy and Known Limitations
 
 This document describes cases where csv-nose may not correctly detect CSV dialects, helping you understand when to use manual overrides.
 
@@ -10,11 +8,11 @@ Tested against standard CSV benchmark datasets:
 
 | Dataset | Success Rate | Notes |
 |---------|--------------|-------|
-| POLLOCK | 96.62% | General CSV files |
+| POLLOCK | 97.30% | General CSV files |
 | W3C-CSVW | 99.55% | W3C CSV on the Web test suite |
-| CSV Wrangling | 87.15% | Real-world messy CSVs |
-| CSV Wrangling CODEC | 86.62% | Filtered subset |
-| CSV Wrangling MESSY | 84.92% | Non-normal structures |
+| CSV Wrangling | 92.74% | Real-world messy CSVs |
+| CSV Wrangling CODEC | 91.55% | Filtered subset |
+| CSV Wrangling MESSY | 90.48% | Non-normal structures |
 
 ## Known Limitations
 
@@ -113,7 +111,7 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | Delimiter | Penalty | Priority (tiebreaker) |
 |-----------|---------|----------------------|
 | `,` `;` `\t` | 1.00 | 10, 9, 8 |
-| `\|` | 0.98 | 7 |
+| `\|` | 0.98 | 8 |
 | `:` | 0.90 | 4 |
 | `^` `~` | 0.80 | 3 |
 | `§` | 0.78 | 2 |
