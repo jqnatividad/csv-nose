@@ -27,12 +27,17 @@ Prepare a new csv-nose release. Takes an optional version number argument.
    - Tag: `v{version}`
    - Title: `v{version}`
    - Use `--draft` so the user can review before publishing
-   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file) or `--notes "$(awk '/## v{version}/{f=1} f && /## v[0-9]/{if(f>1)exit} f' CHANGELOG.md)"` — do NOT use `--generate-notes` (that pulls from PR history, not CHANGELOG)
+   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file) or inline via `--notes`. For the inline approach, substitute the actual version number for `{version}` (e.g. `0.9.0`) in the shell variable and awk pattern:
+     ```bash
+     VERSION="{version}"  # replace with actual version, e.g. 0.9.0
+     --notes "$(awk "/## v$VERSION/{f=1; print; next} f && /## v[0-9]/{exit} f" CHANGELOG.md)"
+     ```
+     Do NOT use `--generate-notes` (that pulls from PR history, not CHANGELOG).
    - Before running `gh release create`, ensure the tag exists and is pushed. Create an annotated tag if it doesn't exist locally, then push it:
      ```
      git tag -a v{version} -m "v{version}" 2>/dev/null || true
-     git push origin v{version}
+     git push origin v{version} 2>/dev/null || true
      ```
-     This handles three cases: tag doesn't exist (creates it), tag exists locally but not remotely (pushes it), tag exists remotely (push is a no-op or skipped). This prevents `gh` from creating a lightweight tag pointing to the wrong commit.
+     This handles three cases: tag doesn't exist (creates it), tag exists locally but not remotely (pushes it), tag exists remotely (push rejected by remote is safely ignored via `|| true`). This prevents `gh` from creating a lightweight tag pointing to the wrong commit.
 
 10. **Do NOT run `cargo publish`** — leave that to the user
