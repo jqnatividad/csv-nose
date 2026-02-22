@@ -5,3 +5,6 @@
 tests/data/pollock/
 tests/data/w3c-csvw/
 tests/data/csv-wrangling/
+
+# Documentation audit reports
+docs/audits/
