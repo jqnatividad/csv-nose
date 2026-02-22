@@ -1233,9 +1233,14 @@ mod tests {
         // both score_dialect and score_all_dialects; using score_all_dialects keeps this
         // test consistent with test_comma_hash_penalty_fires_on_hash_delimited_data.
         //
-        // Note: a higher row count also earns a larger row_bonus (up to +0.10 at 20 rows),
-        // so the 1.3× threshold is conservative — both the penalty and the row_bonus
-        // favour the large dataset, ensuring the direction of the assertion holds.
+        // Note: a higher row count also earns a larger row_bonus (up to +0.10 at ≥20 rows,
+        // computed as `(num_rows.min(20) / 20) * 0.1`).  At 10 rows the small table earns
+        // +0.05; at 60 rows the large table earns the maximum +0.10 additive bonus.
+        // row_bonus is additive, not multiplicative, so it shifts absolute scores rather
+        // than scaling the ratio.  The 1.3× threshold remains defensible even if the
+        // penalty ratio were to drop from 0.85/0.60 ≈ 1.42 down to ~1.30, because the
+        // +0.05 additive gap in row_bonus further favours the large dataset on top of the
+        // penalty ratio — both effects reinforce the same direction.
         let mut small_data = String::new();
         for _ in 0..10 {
             small_data.push_str("a#b#c\n");
@@ -1339,8 +1344,12 @@ mod tests {
             .unwrap();
 
         // Dampening (0.55×) must reduce the score compared to the undampened baseline.
-        // Both datasets have identical three-field-per-row uniformity; the only scoring
-        // difference is the empty-first-field multiplier on the leading-space dataset.
+        // Both datasets have identical three-field-per-row uniformity.  Note: the empty
+        // first field in the leading-space dataset is classified as a distinct type from
+        // the alphabetic values in the baseline, so column-0 type-consistency scores will
+        // differ slightly between the two datasets independently of the 0.55× multiplier.
+        // In practice the dampening effect (0.55×) is large enough to dominate this
+        // residual type-scoring difference.
         assert!(
             dampened_score.gamma < undampened_score.gamma,
             "dampening should reduce score when majority rows have empty first field; \
@@ -1533,6 +1542,30 @@ mod tests {
              score_19={} score_20={}",
             score_19.gamma,
             score_20.gamma
+        );
+
+        // Parallel assertion via score_all_dialects (cached path): the cached path
+        // tallies boundary_count from QuoteBoundaryCounts struct fields, while the
+        // non-cached path above iterates raw data directly.  Both paths share
+        // compute_single_quote_multiplier, but a discrepancy in boundary tallying
+        // between them would not be caught by score_dialect alone.
+        let dialects = vec![tab_sq_dialect];
+        let cached_19 = score_all_dialects(&data_19, &dialects, 200);
+        let cached_20 = score_all_dialects(&data_20, &dialects, 200);
+        let cached_score_19 = cached_19
+            .iter()
+            .find(|s| s.dialect.delimiter == b'\t')
+            .unwrap();
+        let cached_score_20 = cached_20
+            .iter()
+            .find(|s| s.dialect.delimiter == b'\t')
+            .unwrap();
+        assert!(
+            cached_score_20.gamma > cached_score_19.gamma,
+            "closing-only boost (1.10×) should fire on cached path at boundary_count=20 but not at 19; \
+             cached_19={} cached_20={}",
+            cached_score_19.gamma,
+            cached_score_20.gamma
         );
     }
 }
