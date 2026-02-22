@@ -23,9 +23,11 @@ Prepare a new csv-nose release. Takes an optional version number argument.
 6. Run full benchmark suite (all 5 datasets) and compare results with README.md accuracy tables
 7. Run `cargo package --list` to verify publish contents look correct
 8. Summarize all results and flag any issues before the user publishes
-9. Create a GitHub release using `gh release create`:
+9. Create a GitHub draft release using `gh release create`:
    - Tag: `v{version}`
    - Title: `v{version}`
-   - Body: the CHANGELOG.md entry for this version (Added/Changed/Fixed/Performance sections)
    - Use `--draft` so the user can review before publishing
-10. Do NOT run `cargo publish` — leave that to the user
+   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file) or `--notes "$(awk ...)"` — do NOT use `--generate-notes` (that pulls from PR history, not CHANGELOG)
+   - Before running `gh release create`, ensure the tag exists and is pushed: `git tag v{version} && git push origin v{version}`. If the tag already exists remotely, skip creation. This prevents `gh` from creating a lightweight tag pointing to the wrong commit.
+
+10. **Do NOT run `cargo publish`** — leave that to the user
