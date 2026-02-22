@@ -42,8 +42,8 @@
 //! # The Table Uniformity Method
 //!
 //! This library implements the Table Uniformity Method from:
-//! "Wrangling Messy CSV Files by Detecting Row and Type Patterns"
-//! by van den Burg, Nazábal, and Sutton (2019).
+//! "Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"
+//! by García (2024).
 //!
 //! The algorithm achieves ~93% accuracy on real-world messy CSV files by:
 //! 1. Testing multiple potential dialects (delimiter, quote, line terminator combinations)

@@ -927,7 +927,7 @@ pub fn find_best_dialect(scores: &[DialectScore]) -> Option<&DialectScore> {
         .all(|s| s.num_fields <= 1);
 
     scores.iter().filter(|s| s.gamma > 0.0).max_by(|a, b| {
-        // If scores are very close (within 10%), use delimiter and quote preference
+        // If scores are very close (within 5%, score_ratio > 0.95), use delimiter and quote preference
         let score_ratio = if a.gamma > b.gamma {
             b.gamma / a.gamma
         } else {

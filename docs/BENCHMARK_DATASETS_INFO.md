@@ -90,14 +90,14 @@ The CODEC and MESSY subsets filter this dataset:
 - Well-formed files with clear quoting patterns
 - Boundary detection works well with consistent structure
 
-### Why CSV Wrangling has lower accuracy (~87%)
+### Why CSV Wrangling has lower accuracy (~93%)
 
 - Delimiter diversity: 29% use non-comma delimiters
 - Rare delimiters (§, space) have detection penalties
 - Some annotation errors in expected dialects
 - Real-world files often have ambiguous structures
 
-### Why POLLOCK is in between (96.62%)
+### Why POLLOCK is in between (97.30%)
 
 - Intentionally challenging edge cases
 - Tests specific failure modes

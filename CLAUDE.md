@@ -73,7 +73,7 @@ csv-nose is a CSV dialect sniffer implementing the **Table Uniformity Method** f
 
 - **qsv-sniffer API compatibility**: The public API mirrors qsv-sniffer for drop-in replacement
 - **Gamma scoring**: Dialects ranked by combined score = uniformity × type consistency × bonuses/penalties
-- **Delimiter preference**: When scores are close (within 10%), prefer common delimiters (`,` > `;` > `\t` > `|`) over rare ones (`#`, `&`, space)
+- **Delimiter preference**: When scores are close (within 5%, `score_ratio > 0.95`), prefer common delimiters (`,` > `;` > `\t` > `|`) over rare ones (`#`, `&`, space)
 - **Quote preference**: When scores are close, prefer `"` over `'` over `None`
 - **Header detection**: Heuristic-based (type differences between first row and data, uniqueness, length)
 - **Preamble detection**: Two-phase detection - first skips comment lines (`#`), then detects structural preambles (rows with inconsistent field counts). Total count stored in `Header.num_preamble_rows`

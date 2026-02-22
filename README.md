@@ -24,7 +24,7 @@ This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting C
 
 ```toml
 [dependencies]
-csv-nose = "0.6"
+csv-nose = "0.8"
 ```
 
 ### As a CLI tool
@@ -210,7 +210,7 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 | CSV Wrangling CODEC | 92.25%   | 99.30%         |
 | CSV Wrangling MESSY | 91.27%   | 99.21%         |
 
-> NOTE: See [PERFORMANCE.md](docs/PERFORMANCE.md) for details on accuracy breakdowns and known limitations.
+> NOTE: See [PERFORMANCE.md](docs/PERFORMANCE.md) for details on accuracy breakdowns and known limitations (reflects v0.4.0 data).
 
 ### Benchmark Setup
 
