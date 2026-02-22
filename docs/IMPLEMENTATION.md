@@ -210,7 +210,7 @@ Opening boundary requirement guards against apostrophes in text content (which p
 | No boundaries at all + single quotes present | **0.95×** |
 | Otherwise | 1.0× |
 
-The closing-only 1.10× case handles hash-delimited data with space-padded fields (e.g., `# 'addr' # 'city'`) where the space between the `#` delimiter and the `'` quote character prevents the adjacency scan from detecting an opening boundary. The opening boundary scan requires the delimiter and quote to be immediately adjacent (no intervening whitespace), so `# '` registers as a closing boundary after the preceding field ends but not as an opening boundary for the next field.
+The closing-only 1.10× case handles hash-delimited data with space-padded fields (e.g., `# 'addr' # 'city'`) where the space between the `#` delimiter and the `'` quote character prevents the adjacency scan from detecting an opening boundary. The opening boundary scan requires the delimiter and quote to be immediately adjacent (no intervening whitespace), so `# '` does not register as an opening boundary for the next field (the intervening space breaks adjacency). The `'` still contributes to total boundary counts but not to opening boundary counts, leaving `opening_count = 0` and triggering the closing-only 1.10× path.
 
 ### No-quote multiplier rules (`Quote::None`)
 
