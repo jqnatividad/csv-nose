@@ -111,7 +111,7 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | Delimiter | Penalty | Priority (tiebreaker) |
 |-----------|---------|----------------------|
 | `,` `;` `\t` | 1.00 | 10, 9, 8 |
-| `\|` | 0.98 | 8 |
+| `\|` | 0.98 | 8 (ties with `\t`) |
 | `:` | 0.90 | 4 |
 | `^` `~` | 0.80 | 3 |
 | `§` | 0.78 | 2 |
