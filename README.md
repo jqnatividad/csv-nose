@@ -154,7 +154,7 @@ sniffer
     .quote(Quote::Some(b'"'));
 ```
 
-## Benchmarks
+## Accuracy Benchmarks
 
 csv-nose is benchmarked against the [same test datasets](docs/BENCHMARK_DATASETS_INFO.md) used by [CSVsniffer](https://github.com/ws-garcia/CSVsniffer), enabling direct accuracy comparison with other CSV dialect detection tools.
 
