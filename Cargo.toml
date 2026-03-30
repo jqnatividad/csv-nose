@@ -33,7 +33,7 @@ regex = "1"
 simdutf8 = "0.1"
 thiserror = "2.0"
 bytecount = "0.6"
-chardetng = "0.1"
+chardetng = "1.0"
 encoding_rs = "0.8"
 ureq = { version = "3", optional = true }
 foldhash = "0.2"
