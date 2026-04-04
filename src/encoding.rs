@@ -1,6 +1,6 @@
 //! Encoding detection and transcoding using chardetng and `encoding_rs`.
 
-use chardetng::EncodingDetector;
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
 use simdutf8::basic::from_utf8;
 
 /// Check if the given bytes are valid UTF-8.
@@ -91,9 +91,9 @@ pub fn detect_and_transcode(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, bool) {
     }
 
     // Use chardetng to detect encoding
-    let mut detector = EncodingDetector::new();
+    let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
     detector.feed(data, true);
-    let encoding = detector.guess(None, true);
+    let encoding = detector.guess(None, Utf8Detection::Allow);
 
     // If detected as UTF-8, return as-is (might have some invalid bytes)
     if encoding == encoding_rs::UTF_8 {
