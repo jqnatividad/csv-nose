@@ -11,7 +11,7 @@ A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsni
 
 This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia).
 
-Benchmarked against the standard CSVsniffer test suites, **csv-nose is the most accurate and robust of the dialect sniffers compared**; it ranks first or second on every dataset on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW and CSV Wrangling; the **only tool to have 100% accuracy on the W3C-CSVW and POLLOCK test suites**; and the **only tool that never errors on a single file**.[^bench]
+Benchmarked against the standard CSVsniffer test suites, **csv-nose is the most accurate and robust of the dialect sniffers compared**; it ranks first or second on every dataset on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW and CSV Wrangling; the **only tool to have 100% quote detection accuracy on the W3C-CSVW and POLLOCK test suites**; and the **only tool that never errors on a single file**.[^bench]
 
 This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
 
