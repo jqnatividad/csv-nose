@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-30
+
+### Fixed
+
+- Correct dialect/table mismatch: when `find_best_dialect` selected a dialect other than the top-gamma one (via the within-5% delimiter/quote tiebreakers), `sniff_bytes` reused the cached `best_table` — parsed with a different dialect — for preamble detection, field names, and type inference. The cached table is now reused only when it was parsed with the selected dialect; otherwise the data is re-parsed with the selected dialect
+- `score_all_dialects_with_best_table` now returns the dialect that produced the cached table, so the caller verifies identity directly instead of relying on `scores` ordering and sort stability
+- Make `read_sample` tolerant of short reads: `Read::read` may return fewer bytes than requested even when more data is available (pipes, `BufReader` boundaries), which could silently truncate the sample. A new `fill()` helper loops until the buffer is full or EOF (retrying on `Interrupted`) and is used by both the `Bytes` and `Records` branches
+- Cap the `SampleSize::Records` sample at `MAX_RECORDS_BYTES`: the follow-up read was bounded per-read rather than against remaining capacity, so the buffer could grow to roughly twice the documented 100 MB cap
+
+### Changed
+
+- Drop the unused `_dialect` parameter from `detect_header`
+- Collapse nested `if let` blocks in the benchmark test using edition-2024 let-chains
+- Refresh benchmark accuracy tables in `README.md`: corrected CODEC/MESSY delimiter component accuracy (92.25%, 91.27%) and CODEC F1 (0.915) to match actual tool output
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v1.0.1...v1.0.2
+
 ## [1.0.1] - 2026-02-21
 
 ### Fixed
