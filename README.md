@@ -195,7 +195,7 @@ The F1 score is the harmonic mean of precision and recall, providing a balanced 
 | POLLOCK  | **0.973**  | 0.976              | 0.972        | 0.965       | 0.943         | 0.904              |
 | W3C-CSVW | **0.995**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
 | CSV Wrangling | **0.927** | 0.950             | 0.945        | 0.935       | 0.724         | 0.956              |
-| CSV Wrangling CODEC | **0.916** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
+| CSV Wrangling CODEC | **0.915** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
 | CSV Wrangling MESSY | **0.905** | 0.943       | 0.943        | 0.943       | 0.705         | 0.956              |
 
 ### Component Accuracy
@@ -207,8 +207,8 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 | POLLOCK  | 97.30%             | 100.00%        |
 | W3C-CSVW | 99.55%             | 100.00%        |
 | CSV Wrangling | 93.30%         | 99.44%         |
-| CSV Wrangling CODEC | 91.55%   | 99.30%         |
-| CSV Wrangling MESSY | 90.48%   | 99.21%         |
+| CSV Wrangling CODEC | 92.25%   | 99.30%         |
+| CSV Wrangling MESSY | 91.27%   | 99.21%         |
 
 > NOTE: See [ACCURACY.md](docs/ACCURACY.md) for details on accuracy breakdowns and known limitations.
 
