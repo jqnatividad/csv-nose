@@ -200,7 +200,7 @@ This penalizes a tool for both wrong detections and processing errors, so F1 equ
 | POLLOCK  | **0.973**  | 0.953              | 0.956        | 0.942       | 0.926         | 0.833              |
 | W3C-CSVW | **0.995**  | 0.941              | 0.945        | 0.604       | 0.724         | 0.982              |
 | CSV Wrangling | **0.927** | 0.905             | 0.897        | 0.877       | 0.634         | 0.916              |
-| CSV Wrangling CODEC | **0.915** | 0.901       | 0.901        | 0.894       | 0.644         | 0.922              |
+| CSV Wrangling CODEC | **0.915** | 0.901       | 0.901        | 0.894       | 0.644         | 0.923              |
 | CSV Wrangling MESSY | **0.905** | 0.892       | 0.892        | 0.892       | 0.609         | 0.916              |
 
 [^3]: F1 = 2·P·R/(P+R) with the precision/recall definitions above, i.e. F1 = 2·s·(1−e)/(2−e) where *s* is the success ratio and *e* the error ratio. Competitor F1 values are derived from their reported success/error ratios (sourced from the [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) benchmark) using this same formula, rather than reproduced from a separate measurement, so all columns are directly comparable.
