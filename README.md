@@ -9,7 +9,7 @@ A Rust port of the [Table Uniformity Method](https://github.com/ws-garcia/CSVsni
 
 ## Background
 
-This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia). This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
+This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting CSV File Dialects by Table Uniformity Measurement and Data Type Inference"](https://doi.org/10.3233/DS-240062)[^1] by [W. García](https://github.com/ws-garcia). Benchmarked against the standard CSVsniffer test suites, csv-nose is the most accurate and robust of the dialect sniffers compared: it ranks first or second on every dataset on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW, and CSV Wrangling, and is the only tool that never errors on a single file.[^bench] This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
@@ -17,6 +17,8 @@ This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting C
 4. Selecting the dialect with the highest combined gamma score
 
 [^1]: García W. Detecting CSV file dialects by table uniformity measurement and data type inference. Data Science. 2024;7(2):55-72. [doi:10.3233/DS-240062](https://doi.org/10.3233/DS-240062)
+
+[^bench]: Across the five CSVsniffer benchmark suites — POLLOCK, W3C-CSVW, and the CSV Wrangling set with its CODEC and MESSY subsets — csv-nose ranks first or second among the six tools compared on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW, and CSV Wrangling, and is the only tool with a 0% error rate on every suite. The sole exception is the filtered CODEC and MESSY subsets, where DuckDB's `sniff_csv` narrowly edges ahead (while placing last on POLLOCK). All F1 figures are derived with a single consistent methodology from each tool's success and error ratios. See the [Accuracy Benchmarks](#accuracy-benchmarks) tables for full per-tool figures.
 
 ## Installation
 
