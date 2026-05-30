@@ -162,17 +162,15 @@ impl Sniffer {
 
         // Detect structural preamble using the already-parsed table.
         //
-        // `best_table` was parsed with the top-gamma dialect (scores[0]), but
+        // `best_table` was parsed with the top-gamma dialect, but
         // `find_best_dialect` may deliberately select a different dialect when
         // scores are close (delimiter/quote tiebreakers). Reuse the cached table
-        // only when the selected dialect IS the top-gamma one; otherwise re-parse
-        // with the selected dialect so preamble detection, field names, and type
-        // inference all run on the correct parse.
-        let best_is_top_gamma = scores.first().is_some_and(|top| top.dialect == best.dialect);
-        let table_for_preamble = if best_is_top_gamma {
-            best_table.unwrap_or_else(|| parse_table(data, &best.dialect, max_rows))
-        } else {
-            parse_table(data, &best.dialect, max_rows)
+        // only when it was parsed with the dialect we actually selected;
+        // otherwise re-parse with the selected dialect so preamble detection,
+        // field names, and type inference all run on the correct parse.
+        let table_for_preamble = match best_table {
+            Some((dialect, table)) if dialect == best.dialect => table,
+            _ => parse_table(data, &best.dialect, max_rows),
         };
         let structural_preamble = detect_structural_preamble(&table_for_preamble);
 
@@ -245,8 +243,11 @@ impl Sniffer {
                     // Count newlines to see if we have enough records
                     let newlines = bytecount::count(&buffer, b'\n');
                     if newlines < n {
-                        // Read more data
-                        let additional = (n - newlines).saturating_mul(2048).min(MAX_RECORDS_BYTES);
+                        // Read more data, but never let the total exceed the
+                        // MAX_RECORDS_BYTES cap (cap against remaining capacity,
+                        // not just per-read).
+                        let remaining = MAX_RECORDS_BYTES.saturating_sub(buffer.len());
+                        let additional = (n - newlines).saturating_mul(2048).min(remaining);
                         let mut more = vec![0u8; additional];
                         let more_read = fill(&mut reader, &mut more)?;
                         more.truncate(more_read);
