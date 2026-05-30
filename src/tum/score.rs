@@ -1026,7 +1026,12 @@ pub fn score_all_dialects(
 }
 
 /// Score all potential dialects and return sorted by gamma score (descending),
-/// along with the parsed table of the best-scoring dialect.
+/// along with the parsed table of the best-scoring dialect and the dialect it
+/// was parsed with.
+///
+/// Returning the dialect lets callers verify that the cached table matches the
+/// dialect they ultimately select (which may differ from the top-gamma one due
+/// to tiebreakers) without relying on `scores` ordering.
 ///
 /// This avoids re-parsing the best dialect's data for preamble detection
 /// and metadata building.
@@ -1034,7 +1039,7 @@ pub fn score_all_dialects_with_best_table(
     data: &[u8],
     dialects: &[PotentialDialect],
     max_rows: usize,
-) -> (Vec<DialectScore>, Option<Table>) {
+) -> (Vec<DialectScore>, Option<(PotentialDialect, Table)>) {
     // Pre-compute quote counts once for all dialect evaluations
     let quote_counts = QuoteCounts::new(data);
 
@@ -1089,7 +1094,7 @@ pub fn score_all_dialects_with_best_table(
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| j.cmp(i)) // lower index wins on tie
         })
-        .map(|(_, (_, t))| t.clone());
+        .map(|(_, (s, t))| (s.dialect.clone(), t.clone()));
 
     let mut scores: Vec<DialectScore> = pairs.into_iter().map(|(s, _)| s).collect();
 
