@@ -188,15 +188,22 @@ The table below shows the failure ratio (errors during dialect detection) for ea
 
 ### F1 Score
 
-The F1 score is the harmonic mean of precision and recall, providing a balanced measure of dialect detection accuracy.
+The F1 score is the harmonic mean of precision and recall. To compare every tool on equal footing, F1 is derived consistently from the success and error ratios above[^3]:
+
+- **precision** = correct detections ÷ files processed without error
+- **recall** = correct detections ÷ *all* files (files that error count as missed detections)
+
+This penalizes a tool for both wrong detections and processing errors, so F1 equals the success ratio for any tool with a 0% error rate (e.g. `csv-nose` on every dataset).
 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK  | **0.973**  | 0.976              | 0.972        | 0.965       | 0.943         | 0.904              |
-| W3C-CSVW | **0.995**  | 0.967              | 0.967        | 0.748       | 0.730         | 0.986              |
-| CSV Wrangling | **0.927** | 0.950             | 0.945        | 0.935       | 0.724         | 0.956              |
-| CSV Wrangling CODEC | **0.915** | 0.948       | 0.948        | 0.944       | 0.728         | 0.959              |
-| CSV Wrangling MESSY | **0.905** | 0.943       | 0.943        | 0.943       | 0.705         | 0.956              |
+| POLLOCK  | **0.973**  | 0.953              | 0.956        | 0.942       | 0.926         | 0.833              |
+| W3C-CSVW | **0.995**  | 0.941              | 0.945        | 0.604       | 0.724         | 0.982              |
+| CSV Wrangling | **0.927** | 0.905             | 0.897        | 0.877       | 0.634         | 0.916              |
+| CSV Wrangling CODEC | **0.915** | 0.901       | 0.901        | 0.894       | 0.644         | 0.922              |
+| CSV Wrangling MESSY | **0.905** | 0.892       | 0.892        | 0.892       | 0.609         | 0.916              |
+
+[^3]: F1 = 2·P·R/(P+R) with the precision/recall definitions above, i.e. F1 = 2·s·(1−e)/(2−e) where *s* is the success ratio and *e* the error ratio. Competitor F1 values are derived from their reported success/error ratios (sourced from the [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) benchmark) using this same formula, rather than reproduced from a separate measurement, so all columns are directly comparable.
 
 ### Component Accuracy
 

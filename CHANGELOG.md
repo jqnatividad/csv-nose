@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Drop the unused `_dialect` parameter from `detect_header`
 - Collapse nested `if let` blocks in the benchmark test using edition-2024 let-chains
-- Refresh benchmark accuracy tables in `README.md`: corrected CODEC/MESSY delimiter component accuracy (92.25%, 91.27%) and CODEC F1 (0.915) to match actual tool output
+- Refresh benchmark accuracy tables in `README.md`: corrected CODEC/MESSY delimiter component accuracy (92.25%, 91.27%) to match actual tool output
+- Recompute the F1 score table with a single consistent methodology across all tools (F1 = 2·s·(1−e)/(2−e), derived from each tool's success and error ratios so errors count as missed detections). The previous competitor F1 figures came from a separate measurement that contradicted the success/error tables in the same README
 
 **Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v1.0.1...v1.0.2
 
