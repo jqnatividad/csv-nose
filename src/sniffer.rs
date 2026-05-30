@@ -160,9 +160,20 @@ impl Sniffer {
         let best = find_best_dialect(&scores)
             .ok_or_else(|| SnifferError::NoDialectDetected("No valid dialect found".to_string()))?;
 
-        // Detect structural preamble using the already-parsed table
-        let table_for_preamble =
-            best_table.unwrap_or_else(|| parse_table(data, &best.dialect, max_rows));
+        // Detect structural preamble using the already-parsed table.
+        //
+        // `best_table` was parsed with the top-gamma dialect (scores[0]), but
+        // `find_best_dialect` may deliberately select a different dialect when
+        // scores are close (delimiter/quote tiebreakers). Reuse the cached table
+        // only when the selected dialect IS the top-gamma one; otherwise re-parse
+        // with the selected dialect so preamble detection, field names, and type
+        // inference all run on the correct parse.
+        let best_is_top_gamma = scores.first().is_some_and(|top| top.dialect == best.dialect);
+        let table_for_preamble = if best_is_top_gamma {
+            best_table.unwrap_or_else(|| parse_table(data, &best.dialect, max_rows))
+        } else {
+            parse_table(data, &best.dialect, max_rows)
+        };
         let structural_preamble = detect_structural_preamble(&table_for_preamble);
 
         // Total preamble = comment rows + structural rows
@@ -183,10 +194,27 @@ impl Sniffer {
 
     /// Read a sample of data from the reader based on `sample_size` settings.
     fn read_sample<R: Read + Seek>(&self, mut reader: R) -> Result<Vec<u8>> {
+        // `Read::read` may return fewer bytes than requested even when more data
+        // is available (pipes, BufReader chunk boundaries). Loop until the buffer
+        // is full or EOF is reached so the sample is not silently truncated.
+        // Returns the number of bytes actually read.
+        fn fill<R: Read>(reader: &mut R, buf: &mut [u8]) -> std::io::Result<usize> {
+            let mut filled = 0;
+            while filled < buf.len() {
+                match reader.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            Ok(filled)
+        }
+
         match self.sample_size {
             SampleSize::Bytes(n) => {
                 let mut buffer = vec![0u8; n];
-                let bytes_read = reader.read(&mut buffer)?;
+                let bytes_read = fill(&mut reader, &mut buffer)?;
                 buffer.truncate(bytes_read);
                 Ok(buffer)
             }
@@ -209,10 +237,10 @@ impl Sniffer {
                 // Estimate ~1KB per record as a starting point, with a minimum
                 let estimated_size = n.saturating_mul(1024).clamp(8192, MAX_RECORDS_BYTES);
                 let mut buffer = vec![0u8; estimated_size];
-                let bytes_read = reader.read(&mut buffer)?;
+                let bytes_read = fill(&mut reader, &mut buffer)?;
                 buffer.truncate(bytes_read);
 
-                // If we need more data, keep reading
+                // If we filled the estimate, we may not have enough records yet.
                 if bytes_read == estimated_size {
                     // Count newlines to see if we have enough records
                     let newlines = bytecount::count(&buffer, b'\n');
@@ -220,7 +248,7 @@ impl Sniffer {
                         // Read more data
                         let additional = (n - newlines).saturating_mul(2048).min(MAX_RECORDS_BYTES);
                         let mut more = vec![0u8; additional];
-                        let more_read = reader.read(&mut more)?;
+                        let more_read = fill(&mut reader, &mut more)?;
                         more.truncate(more_read);
                         buffer.extend(more);
                     }
@@ -276,7 +304,7 @@ impl Sniffer {
             };
 
         // Detect header on the effective table (pass total_preamble_rows for Header metadata)
-        let header = detect_header(&effective_table, &score.dialect, total_preamble_rows);
+        let header = detect_header(&effective_table, total_preamble_rows);
 
         // Get field names from the effective table (first row after structural preamble)
         let fields = if header.has_header_row && !effective_table.rows.is_empty() {
@@ -327,11 +355,7 @@ impl Sniffer {
 /// Detect if the first row (after preamble) is likely a header row.
 ///
 /// Optimized: Computes type counts in a single pass without allocating Vecs.
-fn detect_header(
-    table: &crate::tum::table::Table,
-    _dialect: &PotentialDialect,
-    preamble_rows: usize,
-) -> Header {
+fn detect_header(table: &crate::tum::table::Table, preamble_rows: usize) -> Header {
     if table.rows.is_empty() {
         return Header::new(false, preamble_rows);
     }

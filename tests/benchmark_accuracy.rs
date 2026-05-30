@@ -29,13 +29,12 @@ fn parse_accuracy_from_output(output: &str) -> Option<f64> {
     for line in output.lines() {
         if line.contains("Passed:") && line.contains('%') {
             // Extract the percentage from the line
-            if let Some(start) = line.find('(') {
-                if let Some(end) = line.find('%') {
-                    if start < end {
-                        let pct_str = &line[start + 1..end];
-                        return pct_str.trim().parse().ok();
-                    }
-                }
+            if let Some(start) = line.find('(')
+                && let Some(end) = line.find('%')
+                && start < end
+            {
+                let pct_str = &line[start + 1..end];
+                return pct_str.trim().parse().ok();
             }
         }
     }
