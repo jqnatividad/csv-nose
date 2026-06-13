@@ -28,9 +28,8 @@ This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy 
 
 ### As a library
 
-```toml
-[dependencies]
-csv-nose = "0.8"
+```bash
+cargo add csv-nose
 ```
 
 ### As a CLI tool
