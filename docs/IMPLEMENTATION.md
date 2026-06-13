@@ -114,14 +114,26 @@ type_score = mean(column_score for all columns)
 **Not in the paper.** An additional per-table pattern specificity score:
 
 ```
-pattern_score = mean(specificity_weight for modal type of each column)
+pattern_score = mean(specificity_weight of each cell)
 ```
 
-Type specificity weights: `DateTime`=1.0, `Date`=0.9, `Float`=1.0, `Unsigned`/`Signed`=1.0, `Boolean`=1.0, `Text`=0.1, null-like strings (`"NULL"`, `"NA"`, etc.)=0.5, empty string=0.0
+Each non-empty cell is matched against an ordered list of regex categories
+(`src/tum/regexes.rs::PATTERN_CATEGORIES`) and takes the weight of the first
+category it matches; the first match wins, so more specific patterns are listed
+first. Specificity weights:
+
+- **1.0** — `boolean`, `unsigned`, `signed`, `float`, ISO date (`date_iso`), ISO datetime (`datetime_iso`)
+- **0.9** — `float_euro`, `float_thousands`, US/European date (`date_us`, `date_euro`), general datetime (`datetime_general`), `currency`, `percentage`
+- **0.8** — `time`, `email`, `url`, `ipv4`, `uuid`
+- **0.5** — null-like strings (`"NULL"`, `"NA"`, etc., via `null` pattern)
+- **0.3** — `alphanum` (mixed alphanumeric tokens like IDs/codes)
+- **0.1** — text fallback (no category matched)
+- **0.0** — empty string
 
 Contributes 0.1× to gamma; rewards files with structured data types over free-form text.
 
-Implementation: `src/tum/type_detection.rs::calculate_pattern_score`
+Implementation: `src/tum/type_detection.rs::calculate_pattern_score` (averages
+`pattern_specificity_score` over every cell).
 
 ---
 

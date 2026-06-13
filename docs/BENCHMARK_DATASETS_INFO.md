@@ -97,7 +97,7 @@ The CODEC and MESSY subsets filter this dataset:
 - Some annotation errors in expected dialects
 - Real-world files often have ambiguous structures
 
-### Why POLLOCK is in between (97.30%)
+### Why POLLOCK is in between (97.97%)
 
 - Intentionally challenging edge cases
 - Tests specific failure modes

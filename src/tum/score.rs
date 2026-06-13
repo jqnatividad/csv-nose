@@ -438,19 +438,62 @@ fn score_dialect_with_counts(
 /// (`inside = 3, outside = 0`), whereas the true comma delimiter sits entirely
 /// outside it (`inside = 0`).
 ///
-/// Operates on LF-normalized data. A `"` toggles the in-quote state (doubled `""`
-/// toggles twice, returning to the prior state, the desired no-op). Counting is
-/// independent of the candidate's own quote char, so every quote-variant of a
-/// spurious delimiter is judged identically and the true delimiter — whose
-/// occurrences are outside the quoted spans — is never implicated.
+/// Operates on LF-normalized data. A `"` only opens or closes a quoted region
+/// when it sits at a *field boundary*: an opening quote follows the start of
+/// data, a line break, or a separator character; a closing quote precedes the
+/// end of data, a line break, or a separator (a doubled `""` is an escaped quote
+/// and keeps the region open). This boundary requirement prevents literal `"` in
+/// unquoted content — e.g. inch marks like `5";6"` — from spuriously trapping a
+/// real delimiter and mislabelling it as inside-quotes.
+///
+/// Counting is independent of the candidate's own quote char, so every
+/// quote-variant of a spurious delimiter is judged identically and the true
+/// delimiter — whose occurrences are outside the quoted spans — is never
+/// implicated.
 fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
+    // A quoted field can legitimately abut the start/end of a record, a line
+    // break, or any separator the sniffer considers a delimiter candidate.
+    let is_boundary = |b: u8| {
+        matches!(
+            b,
+            b',' | b';'
+                | b'\t'
+                | b'|'
+                | b' '
+                | b'^'
+                | b'~'
+                | b'#'
+                | b'&'
+                | b'/'
+                | b':'
+                | 0xA7
+                | b'\n'
+                | b'\r'
+        )
+    };
+
     let mut in_quote = false;
     let mut inside = 0usize;
     let mut outside = 0usize;
+    let mut i = 0;
 
-    for &b in data {
+    while i < data.len() {
+        let b = data[i];
         if b == b'"' {
-            in_quote = !in_quote;
+            if in_quote {
+                if data.get(i + 1) == Some(&b'"') {
+                    // Escaped quote inside a quoted field; stay inside.
+                    i += 2;
+                    continue;
+                }
+                // Close only at a field boundary; otherwise treat as literal content.
+                if data.get(i + 1).is_none_or(|&n| is_boundary(n)) {
+                    in_quote = false;
+                }
+            } else if i == 0 || is_boundary(data[i - 1]) {
+                // Open only when the quote sits at a field start.
+                in_quote = true;
+            }
         } else if b == delimiter {
             if in_quote {
                 inside += 1;
@@ -458,6 +501,7 @@ fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
                 outside += 1;
             }
         }
+        i += 1;
     }
 
     (inside, outside)
@@ -1226,6 +1270,40 @@ mod tests {
         let data = b"Field1,Field2,\"Field;3;3;3\"\n";
         assert_eq!(dquoted_delimiter_counts(data, b';'), (3, 0));
         assert_eq!(dquoted_delimiter_counts(data, b','), (0, 2));
+    }
+
+    #[test]
+    fn test_dquoted_delimiter_counts_literal_quotes_not_trapped() {
+        // Inch-mark-like literal `"` (not at field boundaries) must NOT open a
+        // quoted region, so the real `;` delimiter between `5"` and `6"` stays
+        // counted as outside — otherwise it would be wrongly demoted as a
+        // delimiter trapped inside quotes.
+        let data = b"5\";6\"\n7\";8\"\n";
+        assert_eq!(dquoted_delimiter_counts(data, b';'), (0, 2));
+
+        // A genuinely quoted field whose value contains the delimiter still counts
+        // as inside (opening `"` follows the comma, closing `"` precedes the EOL).
+        let quoted = b"a,\"x;y;z\"\n";
+        assert_eq!(dquoted_delimiter_counts(quoted, b';'), (2, 0));
+    }
+
+    #[test]
+    fn test_literal_quotes_do_not_demote_true_delimiter() {
+        // `;`-delimited rows whose values end in inch marks (`5"`) must keep `;`
+        // the winner: the literal `"` are not field-boundary quotes, so the
+        // inside-quote penalty must not fire on the true delimiter.
+        let data = b"name;height\nboard;5\"\nplank;6\"\nbeam;7\"\njoist;8\"\nstud;9\"\nrail;10\"\n";
+        let dialects = vec![
+            PotentialDialect::new(b';', Quote::Some(b'"'), LineTerminator::LF),
+            PotentialDialect::new(b';', Quote::None, LineTerminator::LF),
+            PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF),
+            PotentialDialect::new(b',', Quote::None, LineTerminator::LF),
+        ];
+
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b';');
     }
 
     #[test]
