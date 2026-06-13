@@ -8,11 +8,11 @@ Tested against standard CSV benchmark datasets:
 
 | Dataset | Success Rate | Notes |
 |---------|--------------|-------|
-| POLLOCK | 97.30% | General CSV files |
+| POLLOCK | 97.97% | General CSV files |
 | W3C-CSVW | 99.55% | W3C CSV on the Web test suite |
-| CSV Wrangling | 92.74% | Real-world messy CSVs |
-| CSV Wrangling CODEC | 91.55% | Filtered subset |
-| CSV Wrangling MESSY | 90.48% | Non-normal structures |
+| CSV Wrangling | 93.30% | Real-world messy CSVs |
+| CSV Wrangling CODEC | 92.25% | Filtered subset |
+| CSV Wrangling MESSY | 91.27% | Non-normal structures |
 
 ## Known Limitations
 
@@ -120,6 +120,17 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | `#` `&` | 0.60 | 1 |
 
 When scores are within 5%, delimiter priority is used as a tiebreaker.
+
+### Delimiters Inside Quoted Fields
+
+A candidate delimiter whose occurrences all fall *inside* double-quoted (`"..."`)
+regions is demoted (0.50 penalty). The `csv` reader only honours `"` as a quote
+when it opens a field, so a delimiter appearing inside a mid-field quoted value
+(e.g. `;` in `Field1,Field2,"Field;3;3;3"`) would otherwise split the value into
+spurious extra fields and beat the true delimiter. The penalty fires only when the
+candidate actually split into ≥2 fields on those inside-quote delimiters, so a
+correctly-quoted single-column value like `"123,,456.789"` (which parses to one
+field under `,`+`"`) is never affected.
 
 ### Quote Evidence Scoring
 

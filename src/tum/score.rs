@@ -427,6 +427,42 @@ fn score_dialect_with_counts(
     (score, table)
 }
 
+/// Count occurrences of `delimiter` that fall inside vs. outside double-quoted
+/// (`"..."`) regions, returning `(inside, outside)`.
+///
+/// Used to detect candidates whose field count is inflated by a delimiter that
+/// only appears *inside* double-quoted fields. The canonical example is a row
+/// like `Field1,Field2,"Field;3;3;3"`: scored with `;` the `csv` reader does not
+/// treat the mid-field `"` as a quote, so the three inner `;` split the row into
+/// 4 fields, beating comma's correct 3. There every `;` is inside the quoted span
+/// (`inside = 3, outside = 0`), whereas the true comma delimiter sits entirely
+/// outside it (`inside = 0`).
+///
+/// Operates on LF-normalized data. A `"` toggles the in-quote state (doubled `""`
+/// toggles twice, returning to the prior state, the desired no-op). Counting is
+/// independent of the candidate's own quote char, so every quote-variant of a
+/// spurious delimiter is judged identically and the true delimiter — whose
+/// occurrences are outside the quoted spans — is never implicated.
+fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
+    let mut in_quote = false;
+    let mut inside = 0usize;
+    let mut outside = 0usize;
+
+    for &b in data {
+        if b == b'"' {
+            in_quote = !in_quote;
+        } else if b == delimiter {
+            if in_quote {
+                inside += 1;
+            } else {
+                outside += 1;
+            }
+        }
+    }
+
+    (inside, outside)
+}
+
 /// Score a dialect against pre-normalized data with pre-computed quote counts.
 ///
 /// This variant assumes the data has already been normalized to LF line endings
@@ -562,6 +598,37 @@ fn score_dialect_with_normalized_data(
             //     factored in, without being so severe that it causes regressions on
             //     legitimate comma-separated files with rare embedded ' # '.
             score.gamma *= 0.82;
+        }
+    }
+
+    // Penalize a candidate delimiter whose occurrences live *inside* double-quoted
+    // (`"..."`) regions.  The `csv` reader only honours `"` as a quote when it opens
+    // a field, so a delimiter splitting inside a mid-field `"..."` (e.g. `;` in
+    // `Field1,Field2,"Field;3;3;3"`) yields spurious extra fields — inflating
+    // field_bonus and pattern specificity and stealing the win from the true
+    // delimiter.  In that case every occurrence of the spurious delimiter is inside
+    // the quoted span, while the true delimiter (comma) sits entirely outside it.
+    //
+    // Requiring *every* occurrence to be inside a quoted span (`outside == 0`) keeps
+    // this strictly targeted: a real delimiter always has occurrences between fields
+    // (outside quotes), so it is never implicated, even on files with stray `"`
+    // (inch marks) or apostrophe-heavy content.  The count is independent of the
+    // candidate's own quote char, so all quote-variants of the spurious delimiter
+    // are demoted together and the correct dialect wins.
+    // The `modal_field_count() >= 2` guard ensures we only demote a candidate whose
+    // *own parse* actually split on those inside-quote delimiters (inflating its
+    // field count).  A correctly-quoted single-column file like `"123,,456.789"`
+    // parses to one field under `,`+`"` (the inner commas are protected), so it is
+    // left untouched and still wins on the common-delimiter tiebreaker.
+    if dialect.delimiter != b'"'
+        && table.modal_field_count() >= 2
+        && normalized_data.contains(&b'"')
+    {
+        let (inside, outside) = dquoted_delimiter_counts(normalized_data, dialect.delimiter);
+        if inside > 0 && outside == 0 {
+            // Heavy demotion: the field structure this delimiter produced is entirely
+            // an artifact of separators trapped inside quoted text.
+            score.gamma *= 0.5;
         }
     }
 
@@ -1145,6 +1212,50 @@ mod tests {
             PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF),
             PotentialDialect::new(b';', Quote::Some(b'"'), LineTerminator::LF),
             PotentialDialect::new(b'\t', Quote::Some(b'"'), LineTerminator::LF),
+        ];
+
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b',');
+    }
+
+    #[test]
+    fn test_dquoted_delimiter_counts() {
+        // Every `;` lives inside the quoted field; both commas are outside it.
+        let data = b"Field1,Field2,\"Field;3;3;3\"\n";
+        assert_eq!(dquoted_delimiter_counts(data, b';'), (3, 0));
+        assert_eq!(dquoted_delimiter_counts(data, b','), (0, 2));
+    }
+
+    #[test]
+    fn test_quoted_delimiter_does_not_steal_win() {
+        // `Field1,Field2,"Field;3;3;3"`: the `;` only appear inside the quoted
+        // field, so the `csv` reader (which ignores the mid-field quote) splits
+        // the row into 4 fields under `;` and would otherwise beat comma's 3.
+        // The inside-quote penalty must keep comma the winner.
+        let data = b"Field1,Field2,\"Field;3;3;3\"\n";
+        let dialects = vec![
+            PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF),
+            PotentialDialect::new(b';', Quote::Some(b'"'), LineTerminator::LF),
+            PotentialDialect::new(b';', Quote::None, LineTerminator::LF),
+        ];
+
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b',');
+    }
+
+    #[test]
+    fn test_single_column_quoted_commas_not_penalized() {
+        // A correctly-quoted single-column value whose only commas are inside the
+        // quotes (e.g. `"123,,456.789"`) parses to one field under `,`+`"`, so the
+        // inside-quote penalty must NOT fire — comma stays the winner over `;`.
+        let data = b"decimal\n\"123,,456.789\"\n\"1,000\"\n";
+        let dialects = vec![
+            PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF),
+            PotentialDialect::new(b';', Quote::Some(b'"'), LineTerminator::LF),
         ];
 
         let scores = score_all_dialects(data, &dialects, 100);

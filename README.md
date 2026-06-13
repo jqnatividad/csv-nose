@@ -22,7 +22,7 @@ This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy 
 
 [^1]: García W. Detecting CSV file dialects by table uniformity measurement and data type inference. Data Science. 2024;7(2):55-72. [doi:10.3233/DS-240062](https://doi.org/10.3233/DS-240062)
 
-[^bench]: Across the five CSVsniffer benchmark suites — POLLOCK, W3C-CSVW, and the CSV Wrangling set with its CODEC and MESSY subsets — csv-nose ranks first or second among the six tools compared on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW, and CSV Wrangling, and is the only tool with a 0% error rate on every suite. The sole exception is the filtered CODEC and MESSY subsets, where DuckDB's `sniff_csv` narrowly edges ahead (while placing last on POLLOCK). All F1 figures are derived with a single consistent methodology from each tool's success and error ratios. See the [Accuracy Benchmarks](#accuracy-benchmarks) tables for full per-tool figures.
+[^bench]: Across the five CSVsniffer benchmark suites — POLLOCK, W3C-CSVW, and the CSV Wrangling set with its CODEC and MESSY subsets — csv-nose ranks first or second among the six tools compared on both success ratio and F1, leads outright on POLLOCK, W3C-CSVW, and CSV Wrangling, and is the only tool with a 0% error rate on every suite. The sole exception is the filtered CODEC and MESSY subsets, where DuckDB's `sniff_csv` ties csv-nose on CODEC and narrowly edges ahead on MESSY (while placing last on POLLOCK). All F1 figures are derived with a single consistent methodology from each tool's success and error ratios. See the [Accuracy Benchmarks](#accuracy-benchmarks) tables for full per-tool figures.
 
 ## Installation
 
@@ -169,11 +169,11 @@ The table below shows the dialect detection success ratio. Accuracy is measured 
 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK  | **97.30%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
+| POLLOCK  | **97.97%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
 | W3C-CSVW[^2] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
-| CSV Wrangling | **92.74%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
-| CSV Wrangling CODEC | **91.55%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
-| CSV Wrangling MESSY | **90.48%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
+| CSV Wrangling | **93.30%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
+| CSV Wrangling CODEC | **92.25%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
+| CSV Wrangling MESSY | **91.27%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
 
 [^2]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
 
@@ -202,11 +202,11 @@ This penalizes a tool for both wrong detections and processing errors, so F1 equ
 
 | Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
-| POLLOCK  | **0.973**  | 0.953              | 0.956        | 0.942       | 0.926         | 0.833              |
+| POLLOCK  | **0.980**  | 0.953              | 0.956        | 0.942       | 0.926         | 0.833              |
 | W3C-CSVW | **0.995**  | 0.941              | 0.945        | 0.604       | 0.724         | 0.982              |
-| CSV Wrangling | **0.927** | 0.905             | 0.897        | 0.877       | 0.634         | 0.916              |
-| CSV Wrangling CODEC | **0.915** | 0.901       | 0.901        | 0.894       | 0.644         | 0.923              |
-| CSV Wrangling MESSY | **0.905** | 0.892       | 0.892        | 0.892       | 0.609         | 0.916              |
+| CSV Wrangling | **0.933** | 0.905             | 0.897        | 0.877       | 0.634         | 0.916              |
+| CSV Wrangling CODEC | **0.923** | 0.901       | 0.901        | 0.894       | 0.644         | 0.923              |
+| CSV Wrangling MESSY | **0.913** | 0.892       | 0.892        | 0.892       | 0.609         | 0.916              |
 
 [^3]: F1 = 2·P·R/(P+R) with the precision/recall definitions above, i.e. F1 = 2·s·(1−e)/(2−e) where *s* is the success ratio and *e* the error ratio. Competitor F1 values are derived from their reported success/error ratios (sourced from the [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) benchmark) using this same formula, rather than reproduced from a separate measurement, so all columns are directly comparable.
 
@@ -216,11 +216,11 @@ csv-nose's delimiter and quote detection accuracy on each dataset:
 
 | Data set | Delimiter Accuracy | Quote Accuracy |
 |:---------|:-------------------|:---------------|
-| POLLOCK  | 97.30%             | 100.00%        |
+| POLLOCK  | 97.97%             | 100.00%        |
 | W3C-CSVW | 99.55%             | 100.00%        |
-| CSV Wrangling | 93.30%         | 99.44%         |
-| CSV Wrangling CODEC | 92.25%   | 99.30%         |
-| CSV Wrangling MESSY | 91.27%   | 99.21%         |
+| CSV Wrangling | 93.85%         | 99.44%         |
+| CSV Wrangling CODEC | 92.96%   | 99.30%         |
+| CSV Wrangling MESSY | 92.06%   | 99.21%         |
 
 > NOTE: See [ACCURACY.md](docs/ACCURACY.md) for details on accuracy breakdowns and known limitations.
 
