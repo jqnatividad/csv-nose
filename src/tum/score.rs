@@ -427,6 +427,62 @@ fn score_dialect_with_counts(
     (score, table)
 }
 
+/// Whether `sep` exhibits consistent row structure in `data`: parsed with a
+/// double-quote-aware toggle, it yields the same field count (≥ 2) on a strong
+/// majority of non-empty lines. This is the structural evidence used to decide
+/// whether a content-prone separator (`/`, space, `:`, `#`, ...) is plausibly a
+/// real column delimiter — and therefore may be trusted to bound quoted fields —
+/// rather than judging it from a hardcoded subset or a global flag. A genuine
+/// delimiter partitions every row the same way; an incidental content character
+/// does not. Operates on LF-normalized data; a doubled `""` is treated as an
+/// escaped quote that keeps the field open.
+fn separator_is_structural(data: &[u8], sep: u8) -> bool {
+    let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut total_lines = 0usize;
+    let mut in_quote = false;
+    let mut fields = 1usize;
+    let mut line_has_content = false;
+    let mut i = 0;
+
+    while i < data.len() {
+        let b = data[i];
+        if b == b'"' {
+            if in_quote && data.get(i + 1) == Some(&b'"') {
+                i += 2; // escaped quote
+                line_has_content = true;
+                continue;
+            }
+            in_quote = !in_quote;
+            line_has_content = true;
+        } else if b == b'\n' && !in_quote {
+            if line_has_content {
+                *counts.entry(fields).or_default() += 1;
+                total_lines += 1;
+            }
+            fields = 1;
+            line_has_content = false;
+        } else if b != b'\r' {
+            if b == sep && !in_quote {
+                fields += 1;
+            }
+            line_has_content = true;
+        }
+        i += 1;
+    }
+    if line_has_content {
+        *counts.entry(fields).or_default() += 1;
+        total_lines += 1;
+    }
+
+    if total_lines == 0 {
+        return false;
+    }
+    // A modal field count of ≥ 2 covering ≥ 80% of non-empty lines = consistent.
+    counts
+        .iter()
+        .any(|(&f, &c)| f >= 2 && c * 5 >= total_lines * 4)
+}
+
 /// Count occurrences of `delimiter` that fall inside vs. outside double-quoted
 /// (`"..."`) regions, returning `(inside, outside)`.
 ///
@@ -438,39 +494,66 @@ fn score_dialect_with_counts(
 /// (`inside = 3, outside = 0`), whereas the true comma delimiter sits entirely
 /// outside it (`inside = 0`).
 ///
-/// Operates on LF-normalized data. A `"` only opens or closes a quoted region
-/// when it sits at a *field boundary*: an opening quote follows the start of
-/// data, a line break, or a separator character; a closing quote precedes the
-/// end of data, a line break, or a separator (a doubled `""` is an escaped quote
-/// and keeps the region open). This boundary requirement prevents literal `"` in
-/// unquoted content — e.g. inch marks like `5";6"` — from spuriously trapping a
-/// real delimiter and mislabelling it as inside-quotes.
+/// Operates on LF-normalized data. A `"` only opens or closes a quoted region at
+/// a *field boundary*: the start/end of data, a line break, or a separator that
+/// the file shows abutting a quote (`s"` or `"s`) **and** that is trustworthy as a
+/// boundary here. A boundary subset alone can't work — it can neither admit every
+/// supported delimiter nor reject every content character — so two conditions are
+/// combined:
 ///
-/// Counting is independent of the candidate's own quote char, so every
-/// quote-variant of a spurious delimiter is judged identically and the true
-/// delimiter — whose occurrences are outside the quoted spans — is never
-/// implicated.
+/// 1. *Adjacency*: the separator must actually appear next to a quote in the
+///    sample (derived from the data, not assumed).
+/// 2. *Trustworthiness*: only a byte that is an actual generated delimiter
+///    candidate (`super::potential_dialects::DELIMITERS`) may bound a quoted
+///    field — a byte that can never be selected as the delimiter (e.g. `:`, which
+///    is excluded because it appears in timestamps) must never demote a real
+///    candidate. Among candidates, a common delimiter (`,` `;` `\t` `|`) is always
+///    trusted; a content-prone one (space `/` `#` `&` `^` `~` `§`) is trusted only
+///    when it shows consistent row structure (`separator_is_structural`), i.e. it
+///    parses to a uniform field count and is therefore plausibly the real column
+///    delimiter. This recognizes genuinely quoted fields after a content-prone
+///    delimiter (e.g. a `/`-delimited file with quoted values, or
+///    `flat_file_database.csv` whose `#`-delimited rows wrap a quoted value) while
+///    a stray `"` after a content byte that does not partition the rows never
+///    opens a region.
+///
+/// A doubled `""` is an escaped quote and keeps the region open. Counting is
+/// independent of the candidate's own quote char; combined with the caller's
+/// `outside == 0` requirement, a real delimiter (which always has occurrences
+/// between fields, outside any quoted span) is never implicated.
 fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
-    // A quoted field can legitimately abut the start/end of a record, a line
-    // break, or any separator the sniffer considers a delimiter candidate.
-    let is_boundary = |b: u8| {
-        matches!(
-            b,
-            b',' | b';'
-                | b'\t'
-                | b'|'
-                | b' '
-                | b'^'
-                | b'~'
-                | b'#'
-                | b'&'
-                | b'/'
-                | b':'
-                | 0xA7
-                | b'\n'
-                | b'\r'
-        )
-    };
+    use super::potential_dialects::DELIMITERS;
+
+    // Common delimiters are trusted as quote boundaries unconditionally; any other
+    // *generated candidate* delimiter (excludes non-candidates like `:`) must show
+    // consistent row structure before it can bound a quoted field.
+    const COMMON: [u8; 4] = [b',', b';', b'\t', b'|'];
+
+    // Derive the active boundary separators from the data: a candidate is active
+    // only where it is seen directly adjacent to a double quote (`s"` or `"s`).
+    let mut adjacent_to_quote = [false; 256];
+    for (i, &b) in data.iter().enumerate() {
+        if b == b'"' {
+            if i > 0 {
+                adjacent_to_quote[data[i - 1] as usize] = true;
+            }
+            if let Some(&next) = data.get(i + 1) {
+                adjacent_to_quote[next as usize] = true;
+            }
+        }
+    }
+    let mut active = [false; 256];
+    for &c in DELIMITERS {
+        let idx = c as usize;
+        if !adjacent_to_quote[idx] {
+            continue;
+        }
+        // Common delimiters are trusted outright; other candidates must partition
+        // the rows consistently (the adjacency check above prunes the work).
+        active[idx] = COMMON.contains(&c) || separator_is_structural(data, c);
+    }
+    // Line breaks and the data edge are always valid field boundaries.
+    let is_boundary = |b: u8| b == b'\n' || b == b'\r' || active[b as usize];
 
     let mut in_quote = false;
     let mut inside = 0usize;
@@ -1285,6 +1368,69 @@ mod tests {
         // as inside (opening `"` follows the comma, closing `"` precedes the EOL).
         let quoted = b"a,\"x;y;z\"\n";
         assert_eq!(dquoted_delimiter_counts(quoted, b';'), (2, 0));
+    }
+
+    #[test]
+    fn test_dquoted_counts_boundaries_are_data_driven() {
+        // A COMMON delimiter (`,` `;` `\t` `|`) adjacent to a quote always opens a
+        // genuine quoted region, so the inner `;` is counted as inside.
+        assert_eq!(dquoted_delimiter_counts(b"a,\"x;b\"\n", b';'), (1, 0));
+
+        // A content-prone CANDIDATE delimiter (`/`, space, `#`, ...) that
+        // partitions every row the same way shows consistent structure, so it IS
+        // trusted as a quoted-field boundary and the inner `;` counts as inside.
+        assert_eq!(
+            dquoted_delimiter_counts(b"a/\"x;b\"\nc/\"y;d\"\n", b';'),
+            (2, 0)
+        );
+
+        // `:` is NOT a generated delimiter candidate (excluded — it appears in
+        // timestamps), so even with perfectly consistent structure it must never
+        // bound a quoted field and must never demote a real candidate like `;`.
+        assert_eq!(
+            dquoted_delimiter_counts(b"a:\"x;b\"\nc:\"y;d\"\n", b';'),
+            (0, 2)
+        );
+
+        // A content-prone byte that does NOT consistently partition the rows
+        // (here `/` appears on only one of four lines) is incidental content, not
+        // a delimiter, so its `"` does not open a region: the `;` stays outside.
+        assert_eq!(
+            dquoted_delimiter_counts(b"a/\"x;b\"\np\nq\nr\n", b';'),
+            (0, 1)
+        );
+
+        // A `"` adjacent only to content (a digit inch mark, never a delimiter)
+        // does not open a region: the `;` stays outside.
+        assert_eq!(
+            dquoted_delimiter_counts(b"5\";6\"\n7\";8\"\n", b';'),
+            (0, 2)
+        );
+    }
+
+    #[test]
+    fn test_colon_not_trusted_as_quote_boundary_end_to_end() {
+        // `:` is excluded from the generated delimiter set, so a colon adjacent to
+        // literal quotes must not let the inside-quote demotion fire on a real
+        // candidate. Scored over generated dialects, `;` (a true candidate) must
+        // win rather than being demoted by the non-candidate `:`.
+        let data = b"a:\"x;y\"\nb:\"p;q\"\nc:\"r;s\"\nd:\"t;u\"\ne:\"v;w\"\n";
+        let dialects =
+            super::super::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b';');
+    }
+
+    #[test]
+    fn test_separator_is_structural() {
+        // `/` partitions every row into 2 fields → structural.
+        assert!(separator_is_structural(b"a/\"x;b\"\nc/\"y;d\"\n", b'/'));
+        // `/` appears on only one of four lines → not structural.
+        assert!(!separator_is_structural(b"a/\"x;b\"\np\nq\nr\n", b'/'));
+        // A separator that never appears → not structural (single field).
+        assert!(!separator_is_structural(b"a\nb\nc\n", b'/'));
     }
 
     #[test]
