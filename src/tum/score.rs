@@ -474,11 +474,6 @@ fn separator_field_count_stats(data: &[u8], sep: u8) -> (usize, usize, usize) {
     (modal, modal_lines, total_lines)
 }
 
-/// Modal field count `sep` produces per line (double-quote aware).
-fn separator_modal_field_count(data: &[u8], sep: u8) -> usize {
-    separator_field_count_stats(data, sep).0
-}
-
 /// Whether `sep` exhibits consistent row structure: it yields the same field
 /// count (≥ 2) on a strong majority (≥ 80%) of non-empty lines. Used to decide
 /// whether a content-prone separator (`/`, space, `#`, ...) is plausibly a real
@@ -524,15 +519,26 @@ fn trusted_boundary_separators(data: &[u8]) -> [bool; 256] {
 }
 
 /// The smallest modal field count among the trusted boundary separators in
-/// `data` (see [`trusted_boundary_separators`]), or `None` if there are none.
+/// `data` that *structurally* partition the rows, or `None` if there are none.
 /// This is the field count of the cleanest plausible delimiter whose quoted
 /// fields could be trapping another candidate's separators.
+///
+/// A separator only counts here when it yields a modal field count `>= 2` on a
+/// strong majority (`>= 80%`) of non-empty lines — the same evidence
+/// `separator_is_structural` requires. In particular a common delimiter trusted
+/// only from a single incidental quote-adjacency (e.g. one `",` line, modal
+/// field count 1) is *not* a real alternative delimiter and must not count as a
+/// cleaner boundary, or it would spuriously re-enable the over-split demotion in
+/// an otherwise ambiguous case.
 fn min_trusted_boundary_modal(data: &[u8]) -> Option<usize> {
     let active = trusted_boundary_separators(data);
     super::potential_dialects::DELIMITERS
         .iter()
         .filter(|&&c| active[c as usize])
-        .map(|&c| separator_modal_field_count(data, c))
+        .filter_map(|&c| {
+            let (modal, modal_lines, total_lines) = separator_field_count_stats(data, c);
+            (modal >= 2 && modal_lines * 5 >= total_lines * 4).then_some(modal)
+        })
         .min()
 }
 
@@ -774,20 +780,28 @@ fn score_dialect_with_normalized_data(
     let candidate_modal = table.modal_field_count();
     if dialect.delimiter != b'"' && candidate_modal >= 2 && normalized_data.contains(&b'"') {
         let (inside, outside) = dquoted_delimiter_counts(normalized_data, dialect.delimiter);
-        // Demote only when the candidate genuinely *over-splits*: every occurrence
-        // of its delimiter is inside a quoted span (`outside == 0`) AND some trusted
-        // boundary delimiter partitions the rows into fewer fields than this
-        // candidate.  If the cleanest plausible delimiter yields the same field
-        // count (e.g. `;` and `/` both give 2 fields for `a/"x;y"`), the two are
-        // equally plausible — genuinely ambiguous — and demoting would wrongly
-        // favour one over the other, so the candidate is left alone.
+        // A candidate with every occurrence inside a quoted span (`outside == 0`)
+        // is provably not the real column delimiter — a real delimiter always has
+        // occurrences *between* fields.  When a structural boundary delimiter
+        // exists (the genuine column separator whose quoted fields trap this
+        // candidate), demote the trapped candidate, with one guard:
+        //   - a CONTENT-PRONE candidate (rare; `/`, `#`, space, ...) is always
+        //     demoted — it is an artifact of separators trapped inside the real
+        //     delimiter's quoted fields (e.g. `/` inside the `#`-quoted value of
+        //     flat_file_database.csv);
+        //   - a COMMON candidate (`,` `;` `\t` `|`) is demoted only on a genuine
+        //     *over-split*: the structural boundary yields strictly fewer fields.
+        //     For a genuinely ambiguous case like `a/"x;y"` (both `;` and `/` give
+        //     2 fields) this leaves the common `;` alone rather than handing the
+        //     win to the rarer `/`.
+        let candidate_is_common = matches!(dialect.delimiter, b',' | b';' | b'\t' | b'|');
         if inside > 0
             && outside == 0
-            && min_trusted_boundary_modal(normalized_data).is_some_and(|m| m < candidate_modal)
+            && let Some(boundary_modal) = min_trusted_boundary_modal(normalized_data)
+            && (!candidate_is_common || boundary_modal < candidate_modal)
         {
-            // Heavy demotion: the field structure this delimiter produced is largely
-            // an artifact of separators trapped inside a cleaner delimiter's quoted
-            // fields.
+            // Heavy demotion: this delimiter's field structure is an artifact of
+            // separators trapped inside a cleaner delimiter's quoted fields.
             score.gamma *= 0.5;
         }
     }
@@ -1468,22 +1482,14 @@ mod tests {
 
     #[test]
     fn test_separator_modal_field_count() {
+        let modal = |data: &[u8], sep: u8| separator_field_count_stats(data, sep).0;
         // `/` splits each row into 2 fields (it sits outside the quoted value).
-        assert_eq!(
-            separator_modal_field_count(b"a/\"x;y\"\nc/\"p;q\"\n", b'/'),
-            2
-        );
+        assert_eq!(modal(b"a/\"x;y\"\nc/\"p;q\"\n", b'/'), 2);
         // `;` is *inside* the quoted value, so the quote-aware count is 1 field —
         // it does not partition the rows once `"` quoting is respected.
-        assert_eq!(
-            separator_modal_field_count(b"a/\"x;y\"\nc/\"p;q\"\n", b';'),
-            1
-        );
+        assert_eq!(modal(b"a/\"x;y\"\nc/\"p;q\"\n", b';'), 1);
         // With no quotes, `;` splits the blob into many fields.
-        assert_eq!(
-            separator_modal_field_count(b"1#a;b;c;d\n2#e;f;g;h\n", b';'),
-            4
-        );
+        assert_eq!(modal(b"1#a;b;c;d\n2#e;f;g;h\n", b';'), 4);
     }
 
     #[test]
@@ -1512,6 +1518,47 @@ mod tests {
         let best = find_best_dialect(&scores).unwrap();
 
         assert_eq!(best.dialect.delimiter, b'#');
+    }
+
+    #[test]
+    fn test_content_prone_candidate_demoted_at_equal_field_count() {
+        // `#` (the real delimiter) and `/` both yield 4 fields, but every `/` is
+        // trapped inside the `#`-quoted value (`outside == 0`), so `/` cannot be the
+        // real delimiter. A content-prone trapped candidate is demoted even at an
+        // equal field count, so the structural `#` wins — this mirrors
+        // flat_file_database.csv (a `#`-delimited file whose quoted blob contains
+        // slashes) and must not regress.
+        let data = b"a#b#c#\"w/x/y/z\"\nd#e#f#\"m/n/o/p\"\ng#h#i#\"q/r/s/t\"\nj#k#l#\"u/v/w/x\"\nm#n#o#\"y/z/a/b\"\n";
+        let dialects =
+            super::super::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b'#');
+    }
+
+    #[test]
+    fn test_incidental_common_delimiter_not_counted_as_boundary() {
+        // `/` structurally partitions 5 of 6 rows into 2 fields; the lone
+        // `foo,"bar"` line makes comma quote-adjacent but comma's modal field
+        // count is 1 (it does not partition the rows), so only `/` (modal 2) is a
+        // real alternative boundary — comma must not register as a cleaner one.
+        let data = b"a/\"x;y\"\nb/\"p;q\"\nc/\"r;s\"\nd/\"t;u\"\ne/\"v;w\"\nfoo,\"bar\"\n";
+        assert_eq!(min_trusted_boundary_modal(data), Some(2));
+    }
+
+    #[test]
+    fn test_sparse_incidental_comma_does_not_demote_ambiguous_candidate() {
+        // Same data: `;` and `/` are equally plausible (both 2 fields), and the
+        // incidental comma must not re-enable the over-split demotion — so `;` (the
+        // common delimiter) is kept rather than handed to the rarer `/`.
+        let data = b"a/\"x;y\"\nb/\"p;q\"\nc/\"r;s\"\nd/\"t;u\"\ne/\"v;w\"\nf/\"g;h\"\nm,\"n\"\n";
+        let dialects =
+            super::super::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b';');
     }
 
     #[test]
