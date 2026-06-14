@@ -427,16 +427,12 @@ fn score_dialect_with_counts(
     (score, table)
 }
 
-/// Whether `sep` exhibits consistent row structure in `data`: parsed with a
-/// double-quote-aware toggle, it yields the same field count (≥ 2) on a strong
-/// majority of non-empty lines. This is the structural evidence used to decide
-/// whether a content-prone separator (`/`, space, `:`, `#`, ...) is plausibly a
-/// real column delimiter — and therefore may be trusted to bound quoted fields —
-/// rather than judging it from a hardcoded subset or a global flag. A genuine
-/// delimiter partitions every row the same way; an incidental content character
-/// does not. Operates on LF-normalized data; a doubled `""` is treated as an
-/// escaped quote that keeps the field open.
-fn separator_is_structural(data: &[u8], sep: u8) -> bool {
+/// Per-line field-count statistics for `sep` in `data`, parsed with a
+/// double-quote-aware toggle (a doubled `""` is an escaped quote that keeps the
+/// field open): returns `(modal_field_count, lines_at_modal, total_non_empty_lines)`.
+/// A genuine column delimiter partitions every row the same way; an incidental
+/// content character does not.
+fn separator_field_count_stats(data: &[u8], sep: u8) -> (usize, usize, usize) {
     let mut counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
     let mut total_lines = 0usize;
     let mut in_quote = false;
@@ -474,13 +470,70 @@ fn separator_is_structural(data: &[u8], sep: u8) -> bool {
         total_lines += 1;
     }
 
-    if total_lines == 0 {
-        return false;
+    let (modal, modal_lines) = counts.into_iter().max_by_key(|&(_, c)| c).unwrap_or((1, 0));
+    (modal, modal_lines, total_lines)
+}
+
+/// Modal field count `sep` produces per line (double-quote aware).
+fn separator_modal_field_count(data: &[u8], sep: u8) -> usize {
+    separator_field_count_stats(data, sep).0
+}
+
+/// Whether `sep` exhibits consistent row structure: it yields the same field
+/// count (≥ 2) on a strong majority (≥ 80%) of non-empty lines. Used to decide
+/// whether a content-prone separator (`/`, space, `#`, ...) is plausibly a real
+/// column delimiter — and therefore may be trusted to bound quoted fields.
+fn separator_is_structural(data: &[u8], sep: u8) -> bool {
+    let (modal, modal_lines, total_lines) = separator_field_count_stats(data, sep);
+    total_lines > 0 && modal >= 2 && modal_lines * 5 >= total_lines * 4
+}
+
+/// The set of bytes (indexed 0..256) that may bound a double-quoted field in
+/// `data`. A separator qualifies only when it is an actual generated delimiter
+/// candidate (`super::potential_dialects::DELIMITERS` — so non-candidates like
+/// `:` are excluded), appears directly adjacent to a quote in the sample (`s"`
+/// or `"s`), and is trustworthy: a common delimiter (`,` `;` `\t` `|`)
+/// unconditionally, or another candidate only when it shows consistent row
+/// structure (`separator_is_structural`).
+fn trusted_boundary_separators(data: &[u8]) -> [bool; 256] {
+    use super::potential_dialects::DELIMITERS;
+    const COMMON: [u8; 4] = [b',', b';', b'\t', b'|'];
+
+    let mut adjacent_to_quote = [false; 256];
+    for (i, &b) in data.iter().enumerate() {
+        if b == b'"' {
+            if i > 0 {
+                adjacent_to_quote[data[i - 1] as usize] = true;
+            }
+            if let Some(&next) = data.get(i + 1) {
+                adjacent_to_quote[next as usize] = true;
+            }
+        }
     }
-    // A modal field count of ≥ 2 covering ≥ 80% of non-empty lines = consistent.
-    counts
+
+    let mut active = [false; 256];
+    for &c in DELIMITERS {
+        let idx = c as usize;
+        if adjacent_to_quote[idx] {
+            // Common delimiters are trusted outright; other candidates must
+            // partition the rows consistently (adjacency above prunes the work).
+            active[idx] = COMMON.contains(&c) || separator_is_structural(data, c);
+        }
+    }
+    active
+}
+
+/// The smallest modal field count among the trusted boundary separators in
+/// `data` (see [`trusted_boundary_separators`]), or `None` if there are none.
+/// This is the field count of the cleanest plausible delimiter whose quoted
+/// fields could be trapping another candidate's separators.
+fn min_trusted_boundary_modal(data: &[u8]) -> Option<usize> {
+    let active = trusted_boundary_separators(data);
+    super::potential_dialects::DELIMITERS
         .iter()
-        .any(|(&f, &c)| f >= 2 && c * 5 >= total_lines * 4)
+        .filter(|&&c| active[c as usize])
+        .map(|&c| separator_modal_field_count(data, c))
+        .min()
 }
 
 /// Count occurrences of `delimiter` that fall inside vs. outside double-quoted
@@ -522,36 +575,7 @@ fn separator_is_structural(data: &[u8], sep: u8) -> bool {
 /// `outside == 0` requirement, a real delimiter (which always has occurrences
 /// between fields, outside any quoted span) is never implicated.
 fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
-    use super::potential_dialects::DELIMITERS;
-
-    // Common delimiters are trusted as quote boundaries unconditionally; any other
-    // *generated candidate* delimiter (excludes non-candidates like `:`) must show
-    // consistent row structure before it can bound a quoted field.
-    const COMMON: [u8; 4] = [b',', b';', b'\t', b'|'];
-
-    // Derive the active boundary separators from the data: a candidate is active
-    // only where it is seen directly adjacent to a double quote (`s"` or `"s`).
-    let mut adjacent_to_quote = [false; 256];
-    for (i, &b) in data.iter().enumerate() {
-        if b == b'"' {
-            if i > 0 {
-                adjacent_to_quote[data[i - 1] as usize] = true;
-            }
-            if let Some(&next) = data.get(i + 1) {
-                adjacent_to_quote[next as usize] = true;
-            }
-        }
-    }
-    let mut active = [false; 256];
-    for &c in DELIMITERS {
-        let idx = c as usize;
-        if !adjacent_to_quote[idx] {
-            continue;
-        }
-        // Common delimiters are trusted outright; other candidates must partition
-        // the rows consistently (the adjacency check above prunes the work).
-        active[idx] = COMMON.contains(&c) || separator_is_structural(data, c);
-    }
+    let active = trusted_boundary_separators(data);
     // Line breaks and the data edge are always valid field boundaries.
     let is_boundary = |b: u8| b == b'\n' || b == b'\r' || active[b as usize];
 
@@ -747,14 +771,23 @@ fn score_dialect_with_normalized_data(
     // field count).  A correctly-quoted single-column file like `"123,,456.789"`
     // parses to one field under `,`+`"` (the inner commas are protected), so it is
     // left untouched and still wins on the common-delimiter tiebreaker.
-    if dialect.delimiter != b'"'
-        && table.modal_field_count() >= 2
-        && normalized_data.contains(&b'"')
-    {
+    let candidate_modal = table.modal_field_count();
+    if dialect.delimiter != b'"' && candidate_modal >= 2 && normalized_data.contains(&b'"') {
         let (inside, outside) = dquoted_delimiter_counts(normalized_data, dialect.delimiter);
-        if inside > 0 && outside == 0 {
-            // Heavy demotion: the field structure this delimiter produced is entirely
-            // an artifact of separators trapped inside quoted text.
+        // Demote only when the candidate genuinely *over-splits*: every occurrence
+        // of its delimiter is inside a quoted span (`outside == 0`) AND some trusted
+        // boundary delimiter partitions the rows into fewer fields than this
+        // candidate.  If the cleanest plausible delimiter yields the same field
+        // count (e.g. `;` and `/` both give 2 fields for `a/"x;y"`), the two are
+        // equally plausible — genuinely ambiguous — and demoting would wrongly
+        // favour one over the other, so the candidate is left alone.
+        if inside > 0
+            && outside == 0
+            && min_trusted_boundary_modal(normalized_data).is_some_and(|m| m < candidate_modal)
+        {
+            // Heavy demotion: the field structure this delimiter produced is largely
+            // an artifact of separators trapped inside a cleaner delimiter's quoted
+            // fields.
             score.gamma *= 0.5;
         }
     }
@@ -1431,6 +1464,54 @@ mod tests {
         assert!(!separator_is_structural(b"a/\"x;b\"\np\nq\nr\n", b'/'));
         // A separator that never appears → not structural (single field).
         assert!(!separator_is_structural(b"a\nb\nc\n", b'/'));
+    }
+
+    #[test]
+    fn test_separator_modal_field_count() {
+        // `/` splits each row into 2 fields (it sits outside the quoted value).
+        assert_eq!(
+            separator_modal_field_count(b"a/\"x;y\"\nc/\"p;q\"\n", b'/'),
+            2
+        );
+        // `;` is *inside* the quoted value, so the quote-aware count is 1 field —
+        // it does not partition the rows once `"` quoting is respected.
+        assert_eq!(
+            separator_modal_field_count(b"a/\"x;y\"\nc/\"p;q\"\n", b';'),
+            1
+        );
+        // With no quotes, `;` splits the blob into many fields.
+        assert_eq!(
+            separator_modal_field_count(b"1#a;b;c;d\n2#e;f;g;h\n", b';'),
+            4
+        );
+    }
+
+    #[test]
+    fn test_equal_field_count_ambiguity_keeps_candidate() {
+        // `a/"x;y"`: `/` and `;` both yield 2 fields, so neither over-splits the
+        // other — the inside-quote demotion must NOT fire and the common delimiter
+        // `;` is kept rather than handing the win to the rarer `/`.
+        let data = b"a/\"x;y\"\nb/\"p;q\"\nc/\"r;s\"\nd/\"t;u\"\ne/\"v;w\"\n";
+        let dialects =
+            super::super::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b';');
+    }
+
+    #[test]
+    fn test_over_split_candidate_is_demoted() {
+        // Here `#` cleanly partitions each row into 2 fields while `;` over-splits
+        // the quoted `#`-field into many — `;` over-splits relative to `#`, so the
+        // demotion fires and `#` wins.
+        let data = b"id#\"a;b;c;d;e\"\n1#\"f;g;h;i;j\"\n2#\"k;l;m;n;o\"\n3#\"p;q;r;s;t\"\n4#\"u;v;w;x;y\"\n";
+        let dialects =
+            super::super::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let scores = score_all_dialects(data, &dialects, 100);
+        let best = find_best_dialect(&scores).unwrap();
+
+        assert_eq!(best.dialect.delimiter, b'#');
     }
 
     #[test]
