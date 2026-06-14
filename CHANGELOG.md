@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-13
+
 ### Added
 
 - Discount delimiters trapped inside double-quoted fields: a candidate delimiter whose occurrences all fall inside `"..."` regions is demoted (×0.5) when its own parse split on them (modal field count ≥ 2). The `csv` reader only honours `"` as a quote when it opens a field, so a delimiter inside a mid-field quoted value (e.g. `;` in `Field1,Field2,"Field;3;3;3"`) would otherwise inflate field/pattern scores and beat the true delimiter. A `modal_field_count() >= 2` guard leaves correctly-quoted single-column values like `"123,,456.789"` untouched. Quote regions are detected only at trusted field boundaries: the data edge, a line break, or a separator that is an actual generated delimiter candidate — a common delimiter (`,` `;` `\t` `|`) unconditionally, or another candidate (space `/` `#` `&` `^` `~` `§`) only when it shows consistent row structure. Non-candidate bytes (e.g. `:`) and literal quotes in unquoted content (e.g. inch marks like `5";6"`) never open a region, so a real delimiter is never wrongly demoted
@@ -18,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Correct stale POLLOCK success ratio in `docs/BENCHMARK_DATASETS_INFO.md` (97.30% → 97.97%) and the pattern-specificity weights table in `docs/IMPLEMENTATION.md` (weights are keyed by regex pattern category in `src/tum/regexes.rs`, scored per cell — e.g. ISO date is 1.0, `alphanum` is 0.3, text fallback is 0.1)
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v1.0.2...v1.1.0
 
 ## [1.0.2] - 2026-05-30
 

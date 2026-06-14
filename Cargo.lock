@@ -227,7 +227,7 @@ dependencies = [
 
 [[package]]
 name = "csv-nose"
-version = "1.0.2"
+version = "1.1.0"
 dependencies = [
  "bytecount",
  "chardetng",
