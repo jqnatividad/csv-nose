@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relicensed from `MIT OR Apache-2.0` to **MIT only**, copyright datHere, Inc. Releases up to and including 1.1.0 remain available under their original dual-license terms
 - Added `LICENSE-MIT`. `Cargo.toml` had always declared a license but no license text existed in the repository, so no license was shipped with the crate through 1.1.0
 
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v1.1.0...v1.2.0
+
 ## [1.1.0] - 2026-06-13
 
 ### Added
