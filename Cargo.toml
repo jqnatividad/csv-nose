@@ -8,7 +8,20 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jqnatividad/csv-nose"
 keywords = ["csv", "sniffer", "dialect", "detection"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
-exclude = ["tests/data/*"]
+# Allowlist rather than a denylist: an `exclude` shipped local tooling
+# (.claude/, .serena/, CLAUDE.md) to crates.io because anything not named was
+# published by default. Note `tests/data/` is intentionally absent — the
+# benchmark corpora are large, third-party, and not redistributable here;
+# `tests/benchmark_accuracy.rs` skips when they are missing.
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "docs/*.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [lib]
 name = "csv_nose"

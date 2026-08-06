@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Benchmark accuracy improvements (zero regressions across all five suites): POLLOCK 97.97% → 98.65%, CSV Wrangling 93.30% → 94.97%, CODEC 92.25% → 94.37%, MESSY 91.27% → 93.65% (W3C-CSVW unchanged at 99.55%). Recovered `weapondef.csv`, `dd_Wickenburg_nobmp_623.csv`, `memberList.csv` and `product_feed.csv`
 - csv-nose now leads outright on **all five** benchmark suites on both success ratio and F1. Previously DuckDB's `sniff_csv` tied on the CODEC subset and narrowly led on MESSY; both now trail. Refreshed the `README.md` and `docs/ACCURACY.md` figures and ranking claims accordingly
 - Documented the remaining benchmark failures in `docs/ACCURACY.md`, separating genuine limitations (whitespace-run delimiters, unquoted nested delimiters) from files that are degenerate, non-tabular, or carry dubious ground-truth annotations
+- Replaced the packaging `exclude` with an explicit `include`. The denylist published local tooling to crates.io — `.claude/` (agents, settings, skills), `.serena/`, and `CLAUDE.md` were all in the 1.1.0 crate because anything not named was included by default. The published crate drops from 41 files to 30
+
+### Added (packaging)
+
+- `LICENSE-MIT` and `LICENSE-APACHE`. `Cargo.toml` has always declared `MIT OR Apache-2.0` but neither license text existed in the repository, so no license was shipped with the crate. The README's License section now links both and states the standard dual-license contribution terms
 
 ## [1.1.0] - 2026-06-13
 
