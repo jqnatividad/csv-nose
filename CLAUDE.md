@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build              # Build debug
 cargo build --release    # Build optimized release
-cargo test               # Run all tests (unit + integration + doc tests)
+cargo test               # Unit + integration + doc tests (benchmark accuracy tests are ignored; see below)
 cargo test test_name     # Run single test by name
 cargo run -- file.csv    # Run CLI on a file
 cargo clippy             # Lint

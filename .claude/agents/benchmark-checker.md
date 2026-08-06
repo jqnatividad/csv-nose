@@ -10,13 +10,20 @@ Run this agent after changes to scoring, parsing, or detection logic — particu
 
 1. Run the benchmark integration tests:
    ```
-   cargo test --test benchmark_accuracy -- --nocapture
+   cargo test --test benchmark_accuracy -- --include-ignored --nocapture
    ```
-2. Parse accuracy percentages from the output for each dataset (POLLOCK, W3C-CSVW, CSV Wrangling, CODEC, MESSY)
-3. Read the benchmark tables in README.md to get the expected accuracy values
-4. Compare actual vs expected for each metric (delimiter, quotechar, overall accuracy)
-5. Report results as a summary table
-6. Flag any regressions where accuracy drops by more than 0.5%
+   `--include-ignored` is mandatory. These tests are `#[ignore]` by default so a fresh
+   clone gets a clean `cargo test`; without the flag this command exits 0 having run
+   nothing, and there would be no output to parse.
+2. Confirm the run reported `6 passed`. If it reports `6 ignored`, the flag was dropped —
+   rerun with it. If it reports failures mentioning a missing test data directory, the
+   CSVsniffer corpora are not installed (see README "Benchmark Setup"); report that as
+   INCONCLUSIVE rather than a regression.
+3. Parse accuracy percentages from the output for each dataset (POLLOCK, W3C-CSVW, CSV Wrangling, CODEC, MESSY)
+4. Read the benchmark tables in README.md to get the expected accuracy values
+5. Compare actual vs expected for each metric (delimiter, quotechar, overall accuracy)
+6. Report results as a summary table
+7. Flag any regressions where accuracy drops by more than 0.5%
 
 ## Output Format
 
