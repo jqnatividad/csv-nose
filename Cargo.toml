@@ -10,12 +10,16 @@ keywords = ["csv", "sniffer", "dialect", "detection"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
 # Allowlist rather than a denylist: an `exclude` shipped local tooling
 # (.claude/, .serena/, CLAUDE.md) to crates.io because anything not named was
-# published by default. Note `tests/data/` is intentionally absent — the
-# benchmark corpora are large, third-party, and not redistributable here;
-# `tests/benchmark_accuracy.rs` skips when they are missing.
+# published by default.
+#
+# `tests/benchmark_accuracy.rs` is deliberately NOT published. It drives the
+# CSVsniffer corpora, which are large, third-party, and not redistributable
+# here, and it panics rather than skipping when they are absent — so shipping
+# it would make `cargo test` fail from the packaged source. Any future test
+# that depends on `tests/data/` must be left out for the same reason.
 include = [
     "src/**/*.rs",
-    "tests/**/*.rs",
+    "tests/integration_tests.rs",
     "docs/*.md",
     "README.md",
     "CHANGELOG.md",
