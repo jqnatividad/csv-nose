@@ -1,6 +1,6 @@
 [![Crates.io](https://img.shields.io/crates/v/csv-nose.svg?logo=crates.io)](https://crates.io/crates/csv-nose)
 [![Docs.rs](https://docs.rs/csv-nose/badge.svg)](https://docs.rs/crate/csv-nose)
-![License: MIT OR Apache-2.0](https://img.shields.io/crates/l/csv-nose.svg)
+![License: MIT](https://img.shields.io/crates/l/csv-nose.svg)
 [![DOI](https://zenodo.org/badge/1137017320.svg)](https://doi.org/10.5281/zenodo.18303093)
 
 # csv-nose
@@ -264,16 +264,8 @@ cargo test --test benchmark_accuracy -- --nocapture
 
 ## License
 
-Licensed under either of
+MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
-
-at your option.
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for
-inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed
-as above, without any additional terms or conditions.
 
 ## Naming
 

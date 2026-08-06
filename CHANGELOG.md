@@ -26,9 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced the packaging `exclude` with an explicit `include`. The denylist published local tooling to crates.io — `.claude/` (agents, settings, skills), `.serena/`, and `CLAUDE.md` were all in the 1.1.0 crate because anything not named was included by default. The published crate drops from 41 files to 28
 - `tests/benchmark_accuracy.rs` is no longer published. It drives the CSVsniffer corpora, which are not redistributable here, and it panics rather than skipping when they are absent — so the 1.1.0 crate could not pass `cargo test` from its own packaged source. The packaged crate now runs 120 tests cleanly
 
-### Added (packaging)
-
-- `LICENSE-MIT` and `LICENSE-APACHE`. `Cargo.toml` has always declared `MIT OR Apache-2.0` but neither license text existed in the repository, so no license was shipped with the crate. The README's License section now links both and states the standard dual-license contribution terms
+- Relicensed from `MIT OR Apache-2.0` to **MIT only**, copyright datHere, Inc. Releases up to and including 1.1.0 remain available under their original dual-license terms
+- Added `LICENSE-MIT`. `Cargo.toml` had always declared a license but no license text existed in the repository, so no license was shipped with the crate through 1.1.0
 
 ## [1.1.0] - 2026-06-13
 
