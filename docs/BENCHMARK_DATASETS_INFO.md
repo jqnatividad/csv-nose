@@ -84,20 +84,20 @@ The CODEC and MESSY subsets filter this dataset:
 
 ## Implications for Detection
 
-### Why W3C-CSVW has highest accuracy (99.55%)
+### Why W3C-CSVW has high accuracy (99.55%)
 
 - Uniform dialect (comma + double-quote) matches csv-nose's default preferences
 - Well-formed files with clear quoting patterns
 - Boundary detection works well with consistent structure
 
-### Why CSV Wrangling has lower accuracy (~93%)
+### Why CSV Wrangling has lower accuracy (~95%)
 
 - Delimiter diversity: 29% use non-comma delimiters
 - Rare delimiters (§, space) have detection penalties
 - Some annotation errors in expected dialects
 - Real-world files often have ambiguous structures
 
-### Why POLLOCK is in between (97.97%)
+### Why POLLOCK is in between (98.65%)
 
 - Intentionally challenging edge cases
 - Tests specific failure modes
@@ -108,8 +108,10 @@ The CODEC and MESSY subsets filter this dataset:
 See [README.md](README.md#benchmark-setup) for instructions on setting up and running benchmarks.
 
 ```bash
-# Run all benchmarks
-cargo test --test benchmark_accuracy -- --nocapture
+# Run all benchmarks. --include-ignored is required: these tests are #[ignore]
+# by default so that `cargo test` on a fresh clone, which has no corpora,
+# stays green. Without the flag the command succeeds having run nothing.
+cargo test --test benchmark_accuracy -- --include-ignored --nocapture
 
 # Run individual dataset
 cargo run --release -- --benchmark tests/data/pollock

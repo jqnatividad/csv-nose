@@ -123,6 +123,7 @@ fn run_benchmark_with_annotations(
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_pollock_accuracy() {
     let (total, accuracy, stdout) = run_dataset_benchmark("pollock");
 
@@ -139,6 +140,7 @@ fn test_pollock_accuracy() {
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_w3c_csvw_accuracy() {
     let (total, accuracy, stdout) = run_dataset_benchmark("w3c-csvw");
 
@@ -155,6 +157,7 @@ fn test_w3c_csvw_accuracy() {
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_csv_wrangling_accuracy() {
     let (total, accuracy, stdout) = run_dataset_benchmark("csv-wrangling");
 
@@ -167,6 +170,7 @@ fn test_csv_wrangling_accuracy() {
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_csv_wrangling_codec_accuracy() {
     // Uses csv-wrangling data dir but csv-wrangling-codec annotations
     let (total, accuracy, stdout) =
@@ -181,6 +185,7 @@ fn test_csv_wrangling_codec_accuracy() {
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_csv_wrangling_messy_accuracy() {
     // Uses csv-wrangling data dir but csv-wrangling-messy annotations (only non-normal files)
     let (total, accuracy, stdout) =
@@ -195,6 +200,7 @@ fn test_csv_wrangling_messy_accuracy() {
 }
 
 #[test]
+#[ignore = "requires CSVsniffer corpora; see README 'Benchmark Setup'"]
 fn test_combined_accuracy_report() {
     let (pollock_total, pollock_accuracy, _) = run_dataset_benchmark("pollock");
     let (w3c_total, w3c_accuracy, _) = run_dataset_benchmark("w3c-csvw");

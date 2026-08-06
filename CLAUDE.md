@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 cargo build              # Build debug
 cargo build --release    # Build optimized release
-cargo test               # Run all tests (unit + integration + doc tests)
+cargo test               # Unit + integration + doc tests (benchmark accuracy tests are ignored; see below)
 cargo test test_name     # Run single test by name
 cargo run -- file.csv    # Run CLI on a file
 cargo clippy             # Lint
@@ -35,11 +35,17 @@ cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/
 # Run benchmark with custom annotations file
 cargo run --release -- --benchmark tests/data/pollock --annotations tests/data/annotations/pollock.txt
 
-# Run benchmark integration tests with output
-cargo test --test benchmark_accuracy -- --nocapture
+# Run benchmark integration tests with output.
+# --include-ignored is required — see note below.
+cargo test --test benchmark_accuracy -- --include-ignored --nocapture
 ```
 
 Note: Benchmark test files must be copied from [CSVsniffer](https://github.com/ws-garcia/CSVsniffer). See README.md "Benchmark Setup" section.
+
+The benchmark accuracy tests are `#[ignore]` by default so a fresh clone, which lacks the
+gitignored corpora, gets a clean `cargo test` instead of six panics. They still panic (rather
+than skipping) when explicitly run without the data, so an accuracy run can never silently
+pass having tested nothing. CI copies the corpora and runs with `--include-ignored`.
 
 ## Architecture
 
