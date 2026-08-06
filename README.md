@@ -258,8 +258,10 @@ cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/
 # Run benchmark on CSV Wrangling MESSY (126 non-normal files)
 cargo run --release -- --benchmark tests/data/csv-wrangling --annotations tests/data/annotations/csv-wrangling-messy.txt
 
-# Run integration tests with detailed output
-cargo test --test benchmark_accuracy -- --nocapture
+# Run integration tests with detailed output.
+# --include-ignored is required: these tests are #[ignore] by default so that
+# `cargo test` on a fresh clone (which has no benchmark corpora) stays green.
+cargo test --test benchmark_accuracy -- --include-ignored --nocapture
 ```
 
 ## License

@@ -25,5 +25,9 @@ jobs:
         cp -r /tmp/CSVsniffer/CSV/* tests/data/pollock/
         cp -r /tmp/CSVsniffer/W3C-CSVW/* tests/data/w3c-csvw/
         cp -r "/tmp/CSVsniffer/CSV_Wrangling/data/github/Curated files/"* tests/data/csv-wrangling/
+    # --include-ignored is required: the benchmark accuracy tests are #[ignore]
+    # by default so a fresh clone (which lacks the gitignored CSVsniffer
+    # corpora) gets a clean `cargo test`. CI copies the corpora above, so it
+    # must opt in — without this flag the accuracy gate would silently not run.
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose -- --include-ignored
