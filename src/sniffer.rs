@@ -683,6 +683,45 @@ mod tests {
     }
 
     #[test]
+    fn test_skip_preamble_blank_lines_within_comment_block() {
+        // A blank line between comments is part of the comment block.
+        let data = b"#c\n\n#d\ndata\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 3);
+        assert_eq!(remaining, b"data\n");
+
+        // Trailing blanks followed by data belong to the data, not the preamble.
+        let data = b"#c\n\n\ndata\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 1);
+        assert_eq!(remaining, b"\n\ndata\n");
+
+        // Several blank runs interleaved with comments, then a trailing run.
+        let data = b"#a\n\n#b\n\n\n#c\n\ndata\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 6);
+        assert_eq!(remaining, b"\ndata\n");
+
+        // Leading blanks with no comment at all: nothing is preamble.
+        let data = b"\n\nname,age\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 0);
+        assert_eq!(remaining, b"\n\nname,age\n");
+
+        // Whitespace-only lines count as blank, and CRLF is handled.
+        let data = b"#c\r\n   \r\n#d\r\ndata\r\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 3);
+        assert_eq!(remaining, b"data\r\n");
+
+        // A comment block that runs to EOF with trailing blanks.
+        let data = b"#c\n\n";
+        let (preamble_rows, remaining) = skip_preamble(data);
+        assert_eq!(preamble_rows, 1);
+        assert_eq!(remaining, b"\n");
+    }
+
+    #[test]
     fn test_sniff_with_preamble() {
         let data = b"# LimeSurvey export\n# Generated 2024-01-01\nname,age,city\nAlice,30,NYC\nBob,25,LA\n";
         let sniffer = Sniffer::new();
