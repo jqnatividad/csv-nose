@@ -476,39 +476,64 @@ fn calculate_avg_record_len(data: &[u8], num_rows: usize) -> usize {
 ///
 /// Detects lines starting with '#' at the beginning of the file and returns
 /// the number of preamble rows and a slice starting after the preamble.
+///
+/// Blank lines interspersed within the leading comment block are tolerated:
+/// they are buffered and only counted as preamble once a further comment line
+/// is seen. A trailing run of blank lines that is followed by data (rather than
+/// by another comment) is left in place, so `#c\n\n\ndata` reports one preamble
+/// row, not three.
 fn skip_preamble(data: &[u8]) -> (usize, &[u8]) {
     let mut preamble_rows = 0;
     let mut offset = 0;
 
+    // Blank lines seen since the last comment line; only committed to the
+    // preamble if another comment line follows.
+    let mut pending_blank_rows = 0;
+    let mut pending_blank_offset = offset;
+
     while offset < data.len() {
-        // Skip leading whitespace on the line
+        // Find end of line (exclusive of the terminator).
+        let mut line_end = offset;
+        while line_end < data.len() && data[line_end] != b'\n' && data[line_end] != b'\r' {
+            line_end += 1;
+        }
+
+        // Include the line terminator in the consumed span.
+        let mut next_offset = line_end;
+        if next_offset < data.len() && data[next_offset] == b'\r' {
+            next_offset += 1;
+        }
+        if next_offset < data.len() && data[next_offset] == b'\n' {
+            next_offset += 1;
+        }
+
+        // Skip leading whitespace to classify the line.
         let mut line_start = offset;
-        while line_start < data.len() && (data[line_start] == b' ' || data[line_start] == b'\t') {
+        while line_start < line_end && (data[line_start] == b' ' || data[line_start] == b'\t') {
             line_start += 1;
         }
 
-        // Check if line starts with #
-        if line_start < data.len() && data[line_start] == b'#' {
-            // Find end of line
-            let mut line_end = line_start;
-            while line_end < data.len() && data[line_end] != b'\n' && data[line_end] != b'\r' {
-                line_end += 1;
+        if line_start == line_end {
+            // Blank (or whitespace-only) line: defer judgement.
+            if next_offset == offset {
+                break; // no progress possible
             }
-
-            // Skip line terminator
-            if line_end < data.len() && data[line_end] == b'\r' {
-                line_end += 1;
-            }
-            if line_end < data.len() && data[line_end] == b'\n' {
-                line_end += 1;
-            }
-
-            preamble_rows += 1;
-            offset = line_end;
+            pending_blank_rows += 1;
+            offset = next_offset;
+        } else if data[line_start] == b'#' {
+            // Comment line: any deferred blanks are part of the comment block.
+            preamble_rows += pending_blank_rows + 1;
+            pending_blank_rows = 0;
+            offset = next_offset;
+            pending_blank_offset = offset;
         } else {
-            // Not a comment line, stop
+            // Data line: deferred blanks belong to the data, not the preamble.
             break;
         }
+    }
+
+    if pending_blank_rows > 0 {
+        offset = pending_blank_offset;
     }
 
     (preamble_rows, &data[offset..])

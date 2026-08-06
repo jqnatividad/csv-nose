@@ -90,7 +90,11 @@ pub const LINE_TERMINATORS: &[LineTerminator] = &[
 
 /// Generate all potential dialect combinations.
 ///
-/// Returns approximately 81 combinations (9 delimiters × 3 quotes × 3 line endings).
+/// Returns 99 combinations (11 delimiters × 3 quotes × 3 line endings).
+///
+/// Note the live sniffing path does not use this: it detects the line
+/// terminator first and calls [`generate_dialects_with_terminator`], which
+/// yields 33 candidates.
 #[allow(dead_code)]
 pub fn generate_potential_dialects() -> Vec<PotentialDialect> {
     let mut dialects = Vec::with_capacity(DELIMITERS.len() * QUOTES.len() * LINE_TERMINATORS.len());
