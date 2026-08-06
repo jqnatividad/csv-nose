@@ -235,11 +235,98 @@ pub struct DialectScore {
     pub is_uniform: bool,
 }
 
+/// Below this many parsed rows, a space delimiter carries an extra penalty.
+/// Space is the one candidate that is overwhelmingly likely to be incidental
+/// text spacing rather than structure, and a handful of rows does not provide
+/// enough repetition to tell the two apart. Genuinely space-delimited files in
+/// the wild are column-aligned data dumps with many rows.
+const SPACE_MIN_CONFIDENT_ROWS: usize = 5;
+
+/// Minimum rows in a parsed table before a preamble window is considered.
+const PREAMBLE_MIN_ROWS: usize = 8;
+/// Minimum number of leading rows that must be discarded. A single deviating
+/// leading row is ordinary title/header variance, not a non-tabular preamble;
+/// forgiving it would hand every candidate a cheap uniformity boost.
+const PREAMBLE_MIN_TRIM: usize = 2;
+/// At most `1 / PREAMBLE_MAX_TRIM_FRAC_INV` of the rows may be discarded.
+const PREAMBLE_MAX_TRIM_FRAC_INV: usize = 4;
+/// A discarded row may hold at most `1 / PREAMBLE_MAX_FIELD_RATIO` of the modal
+/// field count. This is the guard that makes the rule safe: it forbids
+/// discarding any row with >= 25% of the modal field count, which necessarily
+/// excludes every modal row, so an interior non-modal blip can never cascade
+/// into a large trim.
+const PREAMBLE_MAX_FIELD_RATIO: usize = 4;
+/// Minimum surviving rows in the window.
+const PREAMBLE_MIN_WINDOW: usize = 5;
+
+/// Find a scoring window `[start, end)` in which *every* row has the modal
+/// field count, discarding a guarded non-tabular leading block and at most one
+/// truncated trailing record.
+///
+/// This lets a candidate whose field-count variance is entirely attributable to
+/// a leading preamble (e.g. `$$veh_info` / `key=[...]` metadata lines above a
+/// real table) be scored on the tabular part, instead of having its uniformity
+/// destroyed by rows that are not data under any delimiter.
+///
+/// Returns `None` when no qualifying window exists, which is the common case.
+///
+/// INVARIANT: every row in the returned window equals `modal_field_count()`.
+/// Callers rely on this to substitute `tau_0 = tau_1 = 1.0` exactly. Widening
+/// this window to admit non-modal rows would make that substitution wrong and
+/// require a real slice-based tau computation instead.
+fn all_modal_window(table: &Table) -> Option<(usize, usize)> {
+    let fc = &table.field_counts;
+    let n = fc.len();
+    let modal = table.modal_field_count();
+
+    // Cheap rejects first: this runs for all 33 candidates on a rayon hot path.
+    if n < PREAMBLE_MIN_ROWS || modal < 2 {
+        return None;
+    }
+
+    // `read_sample` can cut the sample mid-record (Records(N) estimates a byte
+    // count from a newline sample), so forgive at most one short trailing row.
+    let end = if fc[n - 1] < modal { n - 1 } else { n };
+
+    // Walk back over the maximal all-modal suffix.
+    let mut start = end;
+    while start > 0 && fc[start - 1] == modal {
+        start -= 1;
+    }
+
+    if start < PREAMBLE_MIN_TRIM
+        || start * PREAMBLE_MAX_TRIM_FRAC_INV > n
+        || end - start < PREAMBLE_MIN_WINDOW
+    {
+        return None;
+    }
+
+    // Discarded rows must be structurally unrelated to the data rows, not
+    // merely ragged. `c == 0` is rejected so the ratio test is never vacuous.
+    if fc[..start]
+        .iter()
+        .any(|&c| c == 0 || c * PREAMBLE_MAX_FIELD_RATIO > modal)
+    {
+        return None;
+    }
+
+    Some((start, end))
+}
+
 impl DialectScore {
     /// Create a new score result.
     pub fn new(dialect: PotentialDialect, table: &Table, type_score: f64) -> Self {
-        let tau_0 = calculate_tau_0(table);
-        let tau_1 = calculate_tau_1(table);
+        // When a qualifying all-modal window exists, the candidate's field-count
+        // variance comes from a non-tabular leading preamble (plus at most one
+        // truncated trailing record), not from the delimiter being wrong. Score
+        // uniformity on that window. Because the window is all-modal *by
+        // construction*, tau_0 and tau_1 are exactly 1.0 - an identity, not an
+        // approximation. See `all_modal_window`.
+        let (tau_0, tau_1) = if all_modal_window(table).is_some() {
+            (1.0, 1.0)
+        } else {
+            (calculate_tau_0(table), calculate_tau_1(table))
+        };
         let pattern_score = calculate_pattern_score(table);
         let uniform = is_uniform(table);
 
@@ -351,8 +438,17 @@ fn compute_gamma(
         b',' | b';' | b'\t' => 1.0, // Common delimiters - no penalty
         b'|' => 0.98,               // Pipe - slight penalty
         b':' => 0.90,               // Colon - moderate penalty (often in timestamps)
-        b' ' => 0.75,               // Space - significant penalty (often in text)
-        b'^' | b'~' => 0.80,        // Rare delimiters
+        // Space - significant penalty (often appears in text). On a table with
+        // only a handful of rows there is not enough repetition to distinguish a
+        // real space delimiter from incidental spacing, so penalise harder.
+        b' ' => {
+            if num_rows < SPACE_MIN_CONFIDENT_ROWS {
+                0.45
+            } else {
+                0.75
+            }
+        }
+        b'^' | b'~' => 0.80, // Rare delimiters
         // Hash - often a comment marker, but can be a legitimate delimiter.
         // For large uniform tables with ≥3 fields, reduce the penalty: the
         // heavy evidence of consistent multi-field parsing overrides the prior.
@@ -2058,6 +2154,142 @@ mod tests {
              non_cached={} cached={}",
             score_20.gamma,
             cached_score_20.gamma
+        );
+    }
+
+    /// Build a table carrying only `field_counts`, which is all
+    /// `all_modal_window` inspects.
+    fn table_with_field_counts(counts: &[usize]) -> Table {
+        let mut table = Table::new();
+        table.field_counts = counts.to_vec();
+        table.update_modal_field_count();
+        table
+    }
+
+    #[test]
+    fn test_all_modal_window_dd_wickenburg_shape() {
+        // The real `;` parse of dd_Wickenburg_nobmp_623.csv under the default
+        // Records(100) sample: 12 non-tabular preamble rows, 56 uniform data
+        // rows, and one trailing record truncated mid-sample.
+        let mut counts = vec![1; 12];
+        counts.extend(std::iter::repeat_n(684, 56));
+        counts.push(63);
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), Some((12, 68)));
+    }
+
+    #[test]
+    fn test_all_modal_window_without_truncated_tail() {
+        let mut counts = vec![1; 3];
+        counts.extend(std::iter::repeat_n(20, 12));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), Some((3, 15)));
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_single_deviating_row() {
+        // One odd leading row is ordinary title/header variance, not a preamble.
+        let mut counts = vec![1];
+        counts.extend(std::iter::repeat_n(20, 12));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_thick_preamble_rows() {
+        // Discarded rows holding >= 25% of the modal field count are ragged
+        // data, not a non-tabular preamble.
+        let mut counts = vec![10, 10];
+        counts.extend(std::iter::repeat_n(20, 12));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_single_column_table() {
+        let counts = vec![1; 20];
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_oversized_trim_fraction() {
+        // 30 preamble rows out of 60 exceeds the 25% trim cap.
+        let mut counts = vec![1; 30];
+        counts.extend(std::iter::repeat_n(20, 30));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_short_table() {
+        let mut counts = vec![1; 2];
+        counts.extend(std::iter::repeat_n(20, 5));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_all_modal_window_rejects_interior_blip() {
+        // A non-modal row in the middle must not let the candidate discard the
+        // modal rows before it: those rows fail the field-ratio guard.
+        let mut counts = vec![20; 8];
+        counts.push(1);
+        counts.extend(std::iter::repeat_n(20, 8));
+        let table = table_with_field_counts(&counts);
+        assert_eq!(all_modal_window(&table), None);
+    }
+
+    #[test]
+    fn test_space_needs_enough_rows_to_be_confident() {
+        // Three rows of comma-separated values that also contain spaces: space
+        // must not win on so little evidence.
+        let few = "a, b, c, d\n1, 2, 3, 4\n5, 6, 7, 8\n";
+        let space = PotentialDialect::new(b' ', Quote::Some(b'"'), LineTerminator::LF);
+        let comma = PotentialDialect::new(b',', Quote::Some(b'"'), LineTerminator::LF);
+        assert!(
+            score_dialect(few.as_bytes(), &space, 0).gamma
+                < score_dialect(few.as_bytes(), &comma, 0).gamma
+        );
+
+        // A genuinely space-delimited table with enough rows still wins.
+        let mut many = String::from("id name score\n");
+        for i in 0..20 {
+            many.push_str(&format!("{i} name{i} {i}\n"));
+        }
+        let space_many = score_dialect(many.as_bytes(), &space, 0);
+        let comma_many = score_dialect(many.as_bytes(), &comma, 0);
+        assert!(
+            space_many.gamma > comma_many.gamma,
+            "space ({}) should beat comma ({}) on a real space-delimited table",
+            space_many.gamma,
+            comma_many.gamma
+        );
+    }
+
+    #[test]
+    fn test_preamble_window_lets_true_delimiter_win() {
+        // A 12-row non-tabular preamble above a uniform `;` table: `;` must beat
+        // the degenerate single-field `\t` parse.
+        let mut data = String::new();
+        for i in 0..12 {
+            data.push_str(&format!("$$meta_{i}=[1,2,3]\n"));
+        }
+        data.push_str("h1;h2;h3;h4;h5\n");
+        for i in 0..20 {
+            data.push_str(&format!("{i};{i};{i};{i};{i}\n"));
+        }
+
+        let semi = PotentialDialect::new(b';', Quote::Some(b'"'), LineTerminator::LF);
+        let tab = PotentialDialect::new(b'\t', Quote::Some(b'"'), LineTerminator::LF);
+        let semi_score = score_dialect(data.as_bytes(), &semi, 0);
+        let tab_score = score_dialect(data.as_bytes(), &tab, 0);
+
+        assert!(
+            semi_score.gamma > tab_score.gamma,
+            "semicolon ({}) should outscore the degenerate tab parse ({})",
+            semi_score.gamma,
+            tab_score.gamma
         );
     }
 }

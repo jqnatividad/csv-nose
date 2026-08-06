@@ -8,11 +8,11 @@ Tested against standard CSV benchmark datasets:
 
 | Dataset | Success Rate | Notes |
 |---------|--------------|-------|
-| POLLOCK | 97.97% | General CSV files |
+| POLLOCK | 98.65% | General CSV files |
 | W3C-CSVW | 99.55% | W3C CSV on the Web test suite |
-| CSV Wrangling | 93.30% | Real-world messy CSVs |
-| CSV Wrangling CODEC | 92.25% | Filtered subset |
-| CSV Wrangling MESSY | 91.27% | Non-normal structures |
+| CSV Wrangling | 94.97% | Real-world messy CSVs |
+| CSV Wrangling CODEC | 94.37% | Filtered subset |
+| CSV Wrangling MESSY | 93.65% | Non-normal structures |
 
 ## Known Limitations
 
@@ -20,9 +20,14 @@ Tested against standard CSV benchmark datasets:
 
 csv-nose is biased toward common delimiters (`,`, `;`, `\t`) to improve accuracy on real-world data. Files using rare delimiters may be misdetected.
 
-**Space-delimited files** (0.75 penalty):
+**Space-delimited files** (0.75 penalty, 0.45 below 5 rows):
 - Spaces appear frequently in text content, making them difficult to distinguish as delimiters
-- Examples: `diamonds.csv`, `dict.csv`, `methane_molecular_structure_xyz_20140911.csv`
+- A table of only a few rows does not provide enough repetition to tell a real
+  space delimiter from incidental spacing, so space is penalized harder there.
+  Genuine space-delimited files are column-aligned dumps with many rows.
+- Still challenging: `methane_molecular_structure_xyz_20140911.csv`, which uses
+  *runs* of spaces for column alignment; runs are not collapsed into a single
+  delimiter, so each run parses as several empty fields
 
 **Hash-delimited files** (0.60 penalty):
 - Hash (`#`) is commonly used as a comment marker
@@ -85,6 +90,44 @@ let metadata = Sniffer::new()
     .sniff_path("small.csv")?;
 ```
 
+### Preamble Handling
+
+Non-tabular lines above the real table are handled in two places:
+
+- **Comment preamble** — leading `#` lines are stripped *before* dialect
+  scoring, so they cannot distort delimiter detection. Blank lines *inside* a
+  leading comment block are tolerated; a trailing run of blanks that is followed
+  by data is left in place.
+- **Structural preamble** — a candidate whose field-count variance comes
+  entirely from a non-tabular leading block (for example `$$section` /
+  `key=[...]` metadata above a real table) is scored on the tabular part only.
+  Guard rails keep this from becoming a general "discard inconvenient rows"
+  escape hatch: at least 2 and at most 25% of rows may be discarded, each
+  discarded row must hold under 25% of the modal field count, and at least 5
+  rows must survive.
+
+Comments *interspersed throughout* a file (rather than in a leading block) are
+still treated as data. A file whose comment lines are scattered between data
+rows may be misdetected.
+
+### Files That Are Not Really CSV
+
+Some benchmark failures are not detection bugs. They are recorded here so they
+are not repeatedly re-investigated:
+
+| File | Annotated | Detected | Why it is not worth forcing |
+|------|-----------|----------|------------------------------|
+| `gsi_adresser_og_elevtall_2010.csv` | `,` | `;` | The file is plainly `;`-delimited (7 fields, 3572 rows). The annotation looks mislabeled — csv-nose is arguably correct. |
+| `bugs.csv` | `,` | `;` | An HTTP response dump (`HTTP/1.1 200 OK` plus header lines), not tabular data. |
+| `replace.csv` | `,` | `;` | Tab/`;` fragments with no commas at all. |
+| `admins.csv` | `,` | `#` | Effectively single-column (`milan#_%pass`). |
+| `BIO.csv`, `Empty.csv` | `,` | `;` | LimeSurvey dumps behind a `#` comment header. |
+| `register_data.csv` | `;` | `\t` | Four lines, of which exactly one is data. Neither preamble rule can reach it: line 1 (`SEQUENTIAL`) is not a comment, and structural detection needs at least 3 rows. |
+| `task4_pad.csv` | `,` | ` ` | A Xilinx PAD report — a fixed-width text report rather than a delimited file. |
+
+Forcing these would mean either trusting a mislabeled annotation or
+special-casing degenerate input, at the cost of regressing legitimate files.
+
 ### Multi-table and Embedded Content
 
 Files containing multiple tables or embedded non-CSV content may confuse detection:
@@ -115,7 +158,7 @@ These files have ambiguous structure where multiple dialects produce similar uni
 | `:` | 0.90 | 4 |
 | `^` `~` | 0.80 | 3 |
 | `§` | 0.78 | 2 |
-| ` ` (space) | 0.75 | 2 |
+| ` ` (space) | 0.75 (0.45 if < 5 rows) | 2 |
 | `/` | 0.65 | 2 |
 | `#` `&` | 0.60 | 1 |
 
