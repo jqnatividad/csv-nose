@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-06
+
+### Added
+
+- Score a dialect candidate on its **all-modal window** when its field-count variance comes entirely from a non-tabular leading block. Files like `dd_Wickenburg_nobmp_623.csv` carry metadata lines (`$$veh_info`, `veh_indices=[...]`) above a perfectly uniform table; those rows inflate the population sigma so `tau_0 = 1/(1+2σ)` collapses and the true delimiter loses to a degenerate single-field parse. The window discards a guarded leading block plus at most one truncated trailing record, and because it is all-modal by construction `tau_0 = tau_1 = 1.0` is an exact identity rather than an approximation. Guard rails keep this from becoming a general "discard inconvenient rows" escape hatch: at least 2 and at most 25% of rows may be discarded, at least 5 must survive, and each discarded row must hold under 25% of the modal field count — which necessarily excludes every modal row, making a cascading trim structurally impossible
+
+### Fixed
+
+- `skip_preamble` no longer stops at a blank line inside a leading comment block. Blanks are buffered and committed as preamble only when a further comment line follows, so a trailing blank run before data is left in place (`#c\n\n\ndata` reports one preamble row, not three). Previously a single blank on line 2 of a file meant the rest of its comment header was scored as data, destroying uniformity for every candidate
+- Space is penalised 0.45 rather than 0.75 below 5 parsed rows. A handful of rows does not provide enough repetition to distinguish a real space delimiter from incidental spacing between words. The threshold is measured in parsed rows rather than lines, and is set so that genuinely space-delimited short files remain eligible
+
+### Changed
+
+- Benchmark accuracy improvements (zero regressions across all five suites): POLLOCK 97.97% → 98.65%, CSV Wrangling 93.30% → 94.97%, CODEC 92.25% → 94.37%, MESSY 91.27% → 93.65% (W3C-CSVW unchanged at 99.55%). Recovered `weapondef.csv`, `dd_Wickenburg_nobmp_623.csv`, `memberList.csv` and `product_feed.csv`
+- csv-nose now leads outright on **all five** benchmark suites on both success ratio and F1. Previously DuckDB's `sniff_csv` tied on the CODEC subset and narrowly led on MESSY; both now trail. Refreshed the `README.md` and `docs/ACCURACY.md` figures and ranking claims accordingly
+- Documented the remaining benchmark failures in `docs/ACCURACY.md`, separating genuine limitations (whitespace-run delimiters, unquoted nested delimiters) from files that are degenerate, non-tabular, or carry dubious ground-truth annotations
+
 ## [1.1.0] - 2026-06-13
 
 ### Added
