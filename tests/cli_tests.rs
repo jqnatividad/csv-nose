@@ -56,6 +56,9 @@ fn json_output_parses_and_escapes_the_dialect() {
     assert_eq!(parsed["dialect"]["delimiter"], ",");
     assert_eq!(parsed["dialect"]["quote"], "\"");
     assert_eq!(parsed["dialect"]["is_utf8"], false);
+    assert_eq!(parsed["encoding"]["name"], "windows-1252");
+    assert_eq!(parsed["encoding"]["is_utf8"], false);
+    assert_eq!(parsed["encoding"]["has_bom"], false);
 }
 
 #[test]
@@ -67,6 +70,9 @@ fn json_output_reports_valid_utf8() {
         serde_json::from_str(out.trim()).expect("`-f json` must emit valid JSON");
 
     assert_eq!(parsed["dialect"]["is_utf8"], true);
+    assert_eq!(parsed["encoding"]["name"], "UTF-8");
+    assert_eq!(parsed["encoding"]["is_utf8"], true);
+    assert_eq!(parsed["encoding"]["has_bom"], false);
 }
 
 #[test]
@@ -98,6 +104,9 @@ fn csv_output_parses_and_keeps_columns_aligned() {
     assert_eq!(column(header, row, "delimiter"), ",");
     assert_eq!(column(header, row, "quote"), "\"");
     assert_eq!(column(header, row, "is_utf8"), "false");
+    assert_eq!(column(header, row, "encoding_name"), "windows-1252");
+    assert_eq!(column(header, row, "encoding_is_utf8"), "false");
+    assert_eq!(column(header, row, "encoding_has_bom"), "false");
 }
 
 #[test]
@@ -105,12 +114,18 @@ fn text_output_reports_encoding() {
     let latin1 = fixture(LATIN1);
     let utf8 = fixture(UTF8);
 
+    let latin1_output = run(&[latin1.path().to_str().unwrap()]);
     assert!(
-        run(&[latin1.path().to_str().unwrap()]).contains("UTF-8: false"),
+        latin1_output.contains("Encoding: windows-1252")
+            && latin1_output.contains("Encoding BOM: false")
+            && latin1_output.contains("UTF-8: false"),
         "text output should report a Windows-1252 file as not UTF-8"
     );
+    let utf8_output = run(&[utf8.path().to_str().unwrap()]);
     assert!(
-        run(&[utf8.path().to_str().unwrap()]).contains("UTF-8: true"),
+        utf8_output.contains("Encoding: UTF-8")
+            && utf8_output.contains("Encoding BOM: false")
+            && utf8_output.contains("UTF-8: true"),
         "text output should report a UTF-8 file as UTF-8"
     );
 }

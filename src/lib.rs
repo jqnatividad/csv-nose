@@ -84,6 +84,18 @@ mod tests {
     }
 
     #[test]
+    fn test_metadata_constructors_preserve_compatibility_and_allow_encoding() {
+        let dialect = Dialect::default();
+        let metadata = Metadata::new(dialect.clone(), 10, 2, vec![], vec![]);
+        assert_eq!(metadata.encoding, EncodingInfo::new(true, false));
+
+        let encoding = EncodingInfo::with_name("windows-1252", false, false);
+        let metadata = Metadata::with_encoding(dialect, encoding, 10, 2, vec![], vec![]);
+        assert_eq!(metadata.encoding, encoding);
+        assert!(!metadata.dialect.is_utf8);
+    }
+
+    #[test]
     fn test_sniff_simple_csv() {
         let data = b"a,b,c\n1,2,3\n4,5,6\n";
         let sniffer = Sniffer::new();
