@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `Dialect.is_utf8` now reports whether the input was actually valid UTF-8. It was computed from the *transcoded* sample: `detect_and_transcode` runs first, and `encoding_rs::decode` always emits valid UTF-8 — substituting replacement characters for malformed input — so the check that followed saw valid UTF-8 no matter what was fed in. Every file, in every encoding, was reported as `is_utf8: true`, including through the CLI's plain, JSON and CSV output. Detection now runs on the original bytes, before transcoding
+- `Dialect.is_utf8` no longer misreports a valid UTF-8 file when the sample boundary happens to split a multi-byte character. Samples are cut at a raw byte offset, so an incomplete trailing sequence is now accepted while a genuinely invalid sequence anywhere in the sample is still rejected. On the default `SampleSize::Records(100)` path this affected 3 of 20 synthetic files whose cut point swept a full row period. The tolerance is confined to the sniffer's sample path: the public `detect_encoding` and `is_utf8` stay strict, since an incomplete sequence at a real EOF is malformed rather than truncated. The field's documentation now also states plainly that it describes the *sample*, as every other field in `Metadata` does — invalid bytes beyond the sampled prefix are not seen
 
 ## [1.2.0] - 2026-08-06
 
