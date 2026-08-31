@@ -339,13 +339,13 @@ fn escape_csv(s: &str) -> String {
 fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
     let quote_str = match metadata.dialect.quote {
         Quote::None => "null".to_string(),
-        Quote::Some(q) => format!("\"{}\"", q as char),
+        Quote::Some(q) => format!("\"{}\"", escape_json(&(q as char).to_string())),
     };
 
     print!(
         r#"{{"file":"{}","dialect":{{"delimiter":"{}","quote":{},"has_header":{},"preamble_rows":{},"flexible":{},"is_utf8":{}}},"num_fields":{},"avg_record_len":{}"#,
         escape_json(path),
-        metadata.dialect.delimiter as char,
+        escape_json(&(metadata.dialect.delimiter as char).to_string()),
         quote_str,
         metadata.dialect.header.has_header_row,
         metadata.dialect.header.num_preamble_rows,
@@ -384,7 +384,7 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
 
     let quote_str = match metadata.dialect.quote {
         Quote::None => "none".to_string(),
-        Quote::Some(q) => format!("{}", q as char),
+        Quote::Some(q) => escape_csv(&(q as char).to_string()),
     };
 
     // CSV header (print only for first file or could be configured)
@@ -397,7 +397,7 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
     println!(
         "{},{},{},{},{},{},{},{},{}",
         escape_csv(path),
-        metadata.dialect.delimiter as char,
+        escape_csv(&(metadata.dialect.delimiter as char).to_string()),
         quote_str,
         metadata.dialect.header.has_header_row,
         metadata.dialect.header.num_preamble_rows,
