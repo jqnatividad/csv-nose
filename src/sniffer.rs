@@ -113,13 +113,18 @@ impl Sniffer {
             return Err(SnifferError::EmptyData);
         }
 
-        // Detect encoding and transcode to UTF-8 if necessary
-        let (transcoded_data, was_transcoded) = detect_and_transcode(data);
-        let data = &transcoded_data[..];
+        // Detect encoding info from the *original* bytes, before transcoding.
+        // `encoding_rs::decode` always emits valid UTF-8, substituting
+        // replacement characters for malformed input, so inspecting the
+        // transcoded bytes reports `is_utf8: true` for every input.
+        let is_utf8 = detect_encoding(data).is_utf8;
 
-        // Detect encoding info (for metadata)
-        let encoding_info = detect_encoding(data);
-        let is_utf8 = !was_transcoded || encoding_info.is_utf8;
+        // Detect encoding and transcode to UTF-8 if necessary. The second
+        // return value (whether a transcode happened) has no remaining reader;
+        // leave it in place pending the encoding-metadata work in #44, which
+        // reworks this signature to surface the detected encoding itself.
+        let (transcoded_data, _) = detect_and_transcode(data);
+        let data = &transcoded_data[..];
 
         // Skip BOM
         let data = skip_bom(data);

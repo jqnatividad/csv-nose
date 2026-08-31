@@ -201,6 +201,34 @@ fn test_utf8_bom() {
 }
 
 #[test]
+fn test_non_utf8_is_not_reported_as_utf8() {
+    // Windows-1252 "José,São Paulo" — 0xE9/0xE3/0xFC are not valid UTF-8.
+    let data = b"name,city\nJos\xE9,S\xE3o Paulo\nRen\xE9e,Z\xFCrich\n";
+
+    let sniffer = Sniffer::new();
+    let metadata = sniffer.sniff_bytes(data).unwrap();
+
+    // The sample is transcoded before parsing, so the dialect is still found,
+    assert_eq!(metadata.dialect.delimiter, b',');
+    // but the file itself was not valid UTF-8.
+    assert!(!metadata.dialect.is_utf8);
+}
+
+#[test]
+fn test_utf16le_bom_is_not_reported_as_utf8() {
+    let mut data = vec![0xFF, 0xFE]; // UTF-16LE BOM
+    for unit in "a,b\n1,2\n3,4\n".encode_utf16() {
+        data.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    let sniffer = Sniffer::new();
+    let metadata = sniffer.sniff_bytes(&data).unwrap();
+
+    assert_eq!(metadata.dialect.delimiter, b',');
+    assert!(!metadata.dialect.is_utf8);
+}
+
+#[test]
 fn test_empty_file_error() {
     let data = b"";
     let sniffer = Sniffer::new();
