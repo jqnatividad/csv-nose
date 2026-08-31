@@ -20,6 +20,7 @@ categories = ["command-line-utilities", "parsing", "text-processing"]
 include = [
     "src/**/*.rs",
     "tests/integration_tests.rs",
+    "tests/cli_tests.rs",
     "docs/*.md",
     "README.md",
     "CHANGELOG.md",
@@ -57,6 +58,10 @@ rayon = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# CLI output-format tests parse the binary's stdout with real parsers rather
+# than matching substrings. They also use `csv`, which needs no entry here:
+# test targets inherit the regular dependencies.
+serde_json = "1"
 
 [profile.release]
 lto = true
