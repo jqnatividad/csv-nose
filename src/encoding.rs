@@ -22,13 +22,34 @@ pub fn skip_bom(data: &[u8]) -> &[u8] {
     if has_utf8_bom(data) { &data[3..] } else { data }
 }
 
+/// Check whether `data` is valid UTF-8, tolerating a multi-byte character cut
+/// in half by the end of the buffer.
+///
+/// Samples are truncated at a raw byte offset, so a boundary landing inside a
+/// multi-byte character would otherwise report a perfectly valid file as
+/// non-UTF-8. An *incomplete* sequence at the very end of the buffer is
+/// accepted; a genuinely invalid sequence anywhere is not.
+///
+/// The tolerance is unconditional, so a file whose final character is actually
+/// truncated also reads as valid. That is the deliberate trade: this crate
+/// infers from a sample, and detecting a chopped trailing character is not what
+/// this check exists to do.
+fn is_utf8_ignoring_truncated_tail(data: &[u8]) -> bool {
+    match simdutf8::compat::from_utf8(data) {
+        Ok(_) => true,
+        // `error_len() == None` means "incomplete sequence at end of input",
+        // which is exactly the sample-boundary case.
+        Err(e) => e.error_len().is_none(),
+    }
+}
+
 /// Detect the encoding of the data.
 ///
 /// Currently only supports UTF-8 detection. Returns true if valid UTF-8.
 pub fn detect_encoding(data: &[u8]) -> EncodingInfo {
     let has_bom = has_utf8_bom(data);
     let data_without_bom = skip_bom(data);
-    let valid_utf8 = is_utf8(data_without_bom);
+    let valid_utf8 = is_utf8_ignoring_truncated_tail(data_without_bom);
 
     EncodingInfo {
         is_utf8: valid_utf8,

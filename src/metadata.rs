@@ -46,7 +46,12 @@ pub struct Dialect {
     pub quote: Quote,
     /// Whether the CSV has variable field counts across records.
     pub flexible: bool,
-    /// Whether the file is valid UTF-8.
+    /// Whether the sniffed sample is valid UTF-8.
+    ///
+    /// Like every other field here this is inferred from the sample, not the
+    /// whole file: invalid bytes beyond the sampled prefix are not seen. A
+    /// multi-byte character split by the sample boundary does *not* count as
+    /// invalid.
     pub is_utf8: bool,
 }
 

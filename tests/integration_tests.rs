@@ -229,6 +229,28 @@ fn test_utf16le_bom_is_not_reported_as_utf8() {
 }
 
 #[test]
+fn test_sample_boundary_splitting_a_char_is_still_utf8() {
+    // Valid UTF-8 throughout; 'é' occupies two bytes.
+    let mut text = String::from("name,city\n");
+    for i in 0..50 {
+        text.push_str(&format!("row{i},caf\u{e9} value\n"));
+    }
+    let data = text.into_bytes();
+
+    // Cut the sample at the first offset that lands inside a multi-byte char.
+    let split = (1..data.len())
+        .find(|&n| std::str::from_utf8(&data[..n]).is_err())
+        .expect("input has a multi-byte character to split");
+
+    let mut sniffer = Sniffer::new();
+    sniffer.sample_size(SampleSize::Bytes(split));
+    let metadata = sniffer.sniff_reader(Cursor::new(data)).unwrap();
+
+    // The file is valid UTF-8; only the sample boundary was mid-character.
+    assert!(metadata.dialect.is_utf8);
+}
+
+#[test]
 fn test_empty_file_error() {
     let data = b"";
     let sniffer = Sniffer::new();
