@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Dialect.is_utf8` now reports whether the input was actually valid UTF-8. It was computed from the *transcoded* sample: `detect_and_transcode` runs first, and `encoding_rs::decode` always emits valid UTF-8 — substituting replacement characters for malformed input — so the check that followed saw valid UTF-8 no matter what was fed in. Every file, in every encoding, was reported as `is_utf8: true`, including through the CLI's plain, JSON and CSV output. Detection now runs on the original bytes, before transcoding
+
 ## [1.2.0] - 2026-08-06
 
 ### Added
