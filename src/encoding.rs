@@ -22,19 +22,18 @@ pub fn skip_bom(data: &[u8]) -> &[u8] {
     if has_utf8_bom(data) { &data[3..] } else { data }
 }
 
-/// Check whether `data` is valid UTF-8, tolerating a multi-byte character cut
-/// in half by the end of the buffer.
+/// Check whether a *sampled* buffer is valid UTF-8, tolerating a multi-byte
+/// character cut in half by the end of the buffer.
 ///
 /// Samples are truncated at a raw byte offset, so a boundary landing inside a
 /// multi-byte character would otherwise report a perfectly valid file as
 /// non-UTF-8. An *incomplete* sequence at the very end of the buffer is
 /// accepted; a genuinely invalid sequence anywhere is not.
 ///
-/// The tolerance is unconditional, so a file whose final character is actually
-/// truncated also reads as valid. That is the deliberate trade: this crate
-/// infers from a sample, and detecting a chopped trailing character is not what
-/// this check exists to do.
-fn is_utf8_ignoring_truncated_tail(data: &[u8]) -> bool {
+/// Only for data known to be a prefix of something larger. Callers holding
+/// complete input want [`is_utf8`] or [`detect_encoding`], both of which stay
+/// strict — an incomplete sequence at a real EOF is malformed, not truncated.
+pub(crate) fn is_utf8_ignoring_truncated_tail(data: &[u8]) -> bool {
     match simdutf8::compat::from_utf8(data) {
         Ok(_) => true,
         // `error_len() == None` means "incomplete sequence at end of input",
@@ -46,10 +45,14 @@ fn is_utf8_ignoring_truncated_tail(data: &[u8]) -> bool {
 /// Detect the encoding of the data.
 ///
 /// Currently only supports UTF-8 detection. Returns true if valid UTF-8.
+///
+/// Strict: the data is taken to be complete, so an incomplete multi-byte
+/// sequence at the end is invalid. The sniffer, which works on truncated
+/// samples, uses [`is_utf8_ignoring_truncated_tail`] instead.
 pub fn detect_encoding(data: &[u8]) -> EncodingInfo {
     let has_bom = has_utf8_bom(data);
     let data_without_bom = skip_bom(data);
-    let valid_utf8 = is_utf8_ignoring_truncated_tail(data_without_bom);
+    let valid_utf8 = is_utf8(data_without_bom);
 
     EncodingInfo {
         is_utf8: valid_utf8,
@@ -169,6 +172,24 @@ mod tests {
         let info = detect_encoding(&with_bom);
         assert!(info.is_utf8);
         assert!(info.has_bom);
+    }
+
+    #[test]
+    fn test_detect_encoding_is_strict_about_incomplete_tail() {
+        // 0xC3 opens a two-byte sequence that never completes. At a real EOF
+        // that is malformed, and the public API must say so.
+        assert!(!detect_encoding(b"caf\xC3").is_utf8);
+        assert!(!is_utf8(b"caf\xC3"));
+    }
+
+    #[test]
+    fn test_sampled_check_tolerates_only_a_truncated_tail() {
+        // A sample cut mid-character is still valid UTF-8 data.
+        assert!(is_utf8_ignoring_truncated_tail(b"caf\xC3"));
+        // ...but a bad sequence in the middle is not, tail intact or not.
+        assert!(!is_utf8_ignoring_truncated_tail(b"ca\xC3\xC3fe"));
+        assert!(!is_utf8_ignoring_truncated_tail(&[0x80, 0x81]));
+        assert!(is_utf8_ignoring_truncated_tail("café".as_bytes()));
     }
 
     #[test]

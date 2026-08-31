@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use crate::encoding::{detect_and_transcode, detect_encoding, skip_bom};
+use crate::encoding::{detect_and_transcode, is_utf8_ignoring_truncated_tail, skip_bom};
 use crate::error::{Result, SnifferError};
 use crate::field_type::Type;
 use crate::metadata::{Dialect, Header, Metadata, Quote};
@@ -117,7 +117,11 @@ impl Sniffer {
         // `encoding_rs::decode` always emits valid UTF-8, substituting
         // replacement characters for malformed input, so inspecting the
         // transcoded bytes reports `is_utf8: true` for every input.
-        let is_utf8 = detect_encoding(data).is_utf8;
+        //
+        // Samples are cut at a raw byte offset, so tolerate a multi-byte
+        // character split by that boundary. `detect_encoding` stays strict for
+        // callers who hold complete input.
+        let is_utf8 = is_utf8_ignoring_truncated_tail(skip_bom(data));
 
         // Detect encoding and transcode to UTF-8 if necessary. The second
         // return value (whether a transcode happened) has no remaining reader;
