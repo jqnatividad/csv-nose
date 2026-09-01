@@ -13,7 +13,7 @@ This crate [implements](docs/IMPLEMENTATION.md) the algorithm from ["Detecting C
 
 Benchmarked against the standard CSVsniffer test suites, **csv-nose is the most accurate and robust of the dialect sniffers compared**; it **leads outright on every dataset** on both success ratio and F1; is the **only tool to have 100% quote detection accuracy on the W3C-CSVW and POLLOCK test suites**; and the **only tool that never errors on a single file**.[^bench]
 
-This implementation of the Table Uniformity Method achieves 99.55%[^2] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
+This implementation of the Table Uniformity Method achieves 99.55%[^3] accuracy on the [W3C-CSVW test suite](https://github.com/w3c/csvw) by:
 
 1. Testing multiple potential dialects (delimiter × quote × line terminator combinations)
 2. Scoring each dialect based on table uniformity (consistent field counts)
@@ -167,15 +167,16 @@ csv-nose is benchmarked against the [same test datasets](docs/BENCHMARK_DATASETS
 
 The table below shows the dialect detection success ratio. Accuracy is measured using only files that do not produce errors during dialect inference.
 
-| Data set | `csv-nose` | `CSVsniffer MADSE` | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
+| Data set | `csv-nose` | CSVsniffer MADSE[^2] | `CSVsniffer` | `CleverCSV` | `csv.Sniffer` | DuckDB `sniff_csv` |
 |:---------|:-----------|:-------------------|:-------------|:------------|:--------------|:-------------------|
 | POLLOCK  | **98.65%** | 95.27%             | 96.55%       | 95.17%      | 96.35%        | 84.14%             |
-| W3C-CSVW[^2] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
+| W3C-CSVW[^3] | **99.55%** | 94.52%             | 95.39%       | 61.11%      | 97.69%        | 99.08%             |
 | CSV Wrangling | **94.97%** | 90.50%          | 89.94%       | 87.99%      | 84.26%        | 91.62%             |
 | CSV Wrangling CODEC | **94.37%** | 90.14%    | 90.14%       | 89.44%      | 84.18%        | 92.25%             |
 | CSV Wrangling MESSY | **93.65%** | 89.60%    | 89.60%       | 89.60%      | 83.06%        | 91.94%             |
 
-[^2]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
+[^2]: CSVsniffer MADSE is a variant of CSVsniffer using the [Mean Absolute Deviation and Shannon Entropy (MADSE)](https://github.com/ws-garcia/CSVsniffer#results) method for dialect detection.
+[^3]: csv-nose is optimized for the [W3C CSV on the Web Test Suite](https://w3c.github.io/csvw/tests/) - reaching 99.55% accuracy.
 
 ### Failure Ratio
 
@@ -193,7 +194,7 @@ The table below shows the failure ratio (errors during dialect detection) for ea
 
 ### F1 Score
 
-The F1 score is the harmonic mean of precision and recall. To compare every tool on equal footing, F1 is derived consistently from the success and error ratios above[^3]:
+The F1 score is the harmonic mean of precision and recall. To compare every tool on equal footing, F1 is derived consistently from the success and error ratios above[^4]:
 
 - **precision** = correct detections ÷ files processed without error
 - **recall** = correct detections ÷ *all* files (files that error count as missed detections)
@@ -208,7 +209,7 @@ This penalizes a tool for both wrong detections and processing errors, so F1 equ
 | CSV Wrangling CODEC | **0.944** | 0.901       | 0.901        | 0.894       | 0.644         | 0.923              |
 | CSV Wrangling MESSY | **0.937** | 0.892       | 0.892        | 0.892       | 0.609         | 0.916              |
 
-[^3]: F1 = 2·P·R/(P+R) with the precision/recall definitions above, i.e. F1 = 2·s·(1−e)/(2−e) where *s* is the success ratio and *e* the error ratio. Competitor F1 values are derived from their reported success/error ratios (sourced from the [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) benchmark) using this same formula, rather than reproduced from a separate measurement, so all columns are directly comparable.
+[^4]: F1 = 2·P·R/(P+R) with the precision/recall definitions above, i.e. F1 = 2·s·(1−e)/(2−e) where *s* is the success ratio and *e* the error ratio. Competitor F1 values are derived from their reported success/error ratios (sourced from the [CSVsniffer](https://github.com/ws-garcia/CSVsniffer) benchmark) using this same formula, rather than reproduced from a separate measurement, so all columns are directly comparable.
 
 ### Component Accuracy
 
