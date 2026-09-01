@@ -161,7 +161,7 @@ sniffer
 
 ## Accuracy Benchmarks
 
-csv-nose is benchmarked against the [same test datasets](docs/BENCHMARK_DATASETS_INFO.md) used by [CSVsniffer](https://github.com/ws-garcia/CSVsniffer), enabling direct accuracy comparison with other CSV dialect detection tools.
+csv-nose is benchmarked against the [same test datasets](docs/BENCHMARK_DATASETS_INFO.md) used by [CSVsniffer](https://github.com/ws-garcia/CSVsniffer), enabling direct accuracy comparison with other CSV dialect detection tools like python v3's [`csv.Sniffer`](https://docs.python.org/3/library/csv.html#csv.Sniffer), [CleverCSV](https://github.com/alan-turing-institute/CleverCSV) and DuckDB's [`sniff_csv`](https://duckdb.org/docs/lts/data/csv/auto_detection).
 
 ### Success Ratio
 
