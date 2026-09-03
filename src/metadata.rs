@@ -1,3 +1,4 @@
+use crate::encoding::EncodingInfo;
 use crate::field_type::Type;
 use std::fmt;
 
@@ -6,6 +7,8 @@ use std::fmt;
 pub struct Metadata {
     /// The detected CSV dialect.
     pub dialect: Dialect,
+    /// The detected input encoding.
+    pub encoding: EncodingInfo,
     /// Average record length in bytes.
     pub avg_record_len: usize,
     /// Number of fields per record.
@@ -25,8 +28,23 @@ impl Metadata {
         fields: Vec<String>,
         types: Vec<Type>,
     ) -> Self {
+        let encoding = EncodingInfo::new(dialect.is_utf8, false);
+        Self::with_encoding(dialect, encoding, avg_record_len, num_fields, fields, types)
+    }
+
+    /// Create a new Metadata instance with explicit encoding information.
+    pub const fn with_encoding(
+        mut dialect: Dialect,
+        encoding: EncodingInfo,
+        avg_record_len: usize,
+        num_fields: usize,
+        fields: Vec<String>,
+        types: Vec<Type>,
+    ) -> Self {
+        dialect.is_utf8 = encoding.is_utf8;
         Self {
             dialect,
+            encoding,
             avg_record_len,
             num_fields,
             fields,

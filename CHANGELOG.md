@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Metadata.encoding` now reports the detected input encoding name, UTF-8 validity, and BOM presence. The plain-text, JSON, and CSV CLI formats expose the same information, while the existing `Metadata::new` and `EncodingInfo::new` signatures remain available for compatibility
+
 ### Fixed
 
 - `--format json` emitted invalid JSON and `--format csv` emitted invalid CSV for the most common dialect there is. The detected delimiter and quote characters were interpolated into both formats with no escaping, so a comma-delimited file injected a bare `,` into the CSV row and a `"`-quoted file injected an unbalanced `"` into both. A comma-delimited, `"`-quoted file — the overwhelming majority — produced a CSV data row that a parser reads as 4 fields against a 9-field header, and JSON that fails to parse at the `"quote"` key. Both now escape through the `escape_json`/`escape_csv` helpers already applied to the file path and, in verbose mode, to field names
@@ -356,4 +360,3 @@ No change in detection accuracy.
 - ~95% accuracy on POLLOCK dataset
 - ~94% accuracy on W3C-CSVW dataset
 - ~91% accuracy on CSV Wrangling dataset
-

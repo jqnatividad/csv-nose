@@ -288,6 +288,8 @@ fn print_text_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
         metadata.dialect.header.num_preamble_rows
     );
     println!("  Flexible: {}", metadata.dialect.flexible);
+    println!("  Encoding: {}", metadata.encoding.name);
+    println!("  Encoding BOM: {}", metadata.encoding.has_bom);
     println!("  UTF-8: {}", metadata.dialect.is_utf8);
     println!("  Fields: {}", metadata.num_fields);
     println!("  Avg record length: {} bytes", metadata.avg_record_len);
@@ -343,8 +345,11 @@ fn print_json_output(path: &str, metadata: &csv_nose::Metadata, verbose: bool) {
     };
 
     print!(
-        r#"{{"file":"{}","dialect":{{"delimiter":"{}","quote":{},"has_header":{},"preamble_rows":{},"flexible":{},"is_utf8":{}}},"num_fields":{},"avg_record_len":{}"#,
+        r#"{{"file":"{}","encoding":{{"name":"{}","is_utf8":{},"has_bom":{}}},"dialect":{{"delimiter":"{}","quote":{},"has_header":{},"preamble_rows":{},"flexible":{},"is_utf8":{}}},"num_fields":{},"avg_record_len":{}"#,
         escape_json(path),
+        escape_json(metadata.encoding.name),
+        metadata.encoding.is_utf8,
+        metadata.encoding.has_bom,
         escape_json(&(metadata.dialect.delimiter as char).to_string()),
         quote_str,
         metadata.dialect.header.has_header_row,
@@ -390,13 +395,16 @@ fn print_csv_output(path: &str, metadata: &csv_nose::Metadata) {
     // CSV header (print only for first file or could be configured)
     if !HEADER_PRINTED.swap(true, Ordering::Relaxed) {
         println!(
-            "file,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
+            "file,encoding_name,encoding_is_utf8,encoding_has_bom,delimiter,quote,has_header,preamble_rows,flexible,is_utf8,num_fields,avg_record_len"
         );
     }
 
     println!(
-        "{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{}",
         escape_csv(path),
+        escape_csv(metadata.encoding.name),
+        metadata.encoding.is_utf8,
+        metadata.encoding.has_bom,
         escape_csv(&(metadata.dialect.delimiter as char).to_string()),
         quote_str,
         metadata.dialect.header.has_header_row,

@@ -189,6 +189,38 @@ fn test_utf8_detection() {
 }
 
 #[test]
+fn test_metadata_includes_utf8_encoding_name() {
+    let data = b"name,city\nAlice,Sao Paulo\n";
+    let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+
+    assert_eq!(metadata.encoding.name, "UTF-8");
+    assert!(metadata.encoding.is_utf8);
+    assert!(!metadata.encoding.has_bom);
+}
+
+#[test]
+fn test_metadata_includes_detected_non_utf8_encoding_name() {
+    let data: &[u8] = b"name,city\nAlice,Caf\xE9\nBob,Paris\n";
+    let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+
+    assert_eq!(metadata.encoding.name, "windows-1252");
+    assert!(!metadata.encoding.is_utf8);
+    assert!(!metadata.encoding.has_bom);
+}
+
+#[test]
+fn test_metadata_includes_utf16_encoding_name() {
+    let data: &[u8] = &[
+        0xFF, 0xFE, b'a', 0, b',', 0, b'b', 0, b'\n', 0, b'1', 0, b',', 0, b'2', 0, b'\n', 0,
+    ];
+    let metadata = Sniffer::new().sniff_bytes(data).unwrap();
+
+    assert_eq!(metadata.encoding.name, "UTF-16LE");
+    assert!(!metadata.encoding.is_utf8);
+    assert!(metadata.encoding.has_bom);
+}
+
+#[test]
 fn test_utf8_bom() {
     let mut data = vec![0xEF, 0xBB, 0xBF]; // UTF-8 BOM
     data.extend_from_slice(b"a,b,c\n1,2,3\n");
@@ -198,6 +230,8 @@ fn test_utf8_bom() {
 
     assert_eq!(metadata.dialect.delimiter, b',');
     assert!(metadata.dialect.is_utf8);
+    assert_eq!(metadata.encoding.name, "UTF-8");
+    assert!(metadata.encoding.has_bom);
 }
 
 #[test]

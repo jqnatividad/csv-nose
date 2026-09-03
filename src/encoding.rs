@@ -44,35 +44,85 @@ pub(crate) fn is_utf8_ignoring_truncated_tail(data: &[u8]) -> bool {
 
 /// Detect the encoding of the data.
 ///
-/// Currently only supports UTF-8 detection. Returns true if valid UTF-8.
+/// Detects UTF-8, UTF-16 BOMs, and legacy encodings using `chardetng`.
 ///
 /// Strict: the data is taken to be complete, so an incomplete multi-byte
-/// sequence at the end is invalid. The sniffer, which works on truncated
-/// samples, uses [`is_utf8_ignoring_truncated_tail`] instead.
+/// sequence at the end is invalid. The sniffer tolerates an incomplete UTF-8
+/// sequence when a sample boundary splits a character.
 pub fn detect_encoding(data: &[u8]) -> EncodingInfo {
+    detect_encoding_impl(data, is_utf8).1
+}
+
+/// Detect the input encoding, retaining the `encoding_rs` value needed for
+/// transcoding alongside the public metadata representation.
+fn detect_encoding_impl(
+    data: &[u8],
+    utf8_validator: fn(&[u8]) -> bool,
+) -> (&'static encoding_rs::Encoding, EncodingInfo) {
+    // Check BOMs before UTF-8 validation and statistical detection. UTF-16
+    // data is not valid UTF-8, and chardetng cannot reliably identify it.
+    if data.starts_with(&[0xFF, 0xFE]) {
+        return (
+            encoding_rs::UTF_16LE,
+            EncodingInfo::with_name("UTF-16LE", false, true),
+        );
+    }
+    if data.starts_with(&[0xFE, 0xFF]) {
+        return (
+            encoding_rs::UTF_16BE,
+            EncodingInfo::with_name("UTF-16BE", false, true),
+        );
+    }
+
     let has_bom = has_utf8_bom(data);
     let data_without_bom = skip_bom(data);
-    let valid_utf8 = is_utf8(data_without_bom);
+    let valid_utf8 = utf8_validator(data_without_bom);
 
-    EncodingInfo {
-        is_utf8: valid_utf8,
-        has_bom,
+    if valid_utf8 {
+        return (
+            encoding_rs::UTF_8,
+            EncodingInfo::with_name("UTF-8", true, has_bom),
+        );
     }
+
+    let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+    detector.feed(data, true);
+    let encoding = detector.guess(None, Utf8Detection::Allow);
+
+    (
+        encoding,
+        EncodingInfo::with_name(encoding.name(), false, has_bom),
+    )
 }
 
 /// Information about the detected encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncodingInfo {
+    /// Name of the detected encoding, such as `UTF-8` or `windows-1252`.
+    pub name: &'static str,
     /// Whether the data is valid UTF-8.
     pub is_utf8: bool,
-    /// Whether a UTF-8 BOM was present.
+    /// Whether a byte order mark was present.
     pub has_bom: bool,
 }
 
 impl EncodingInfo {
     /// Create a new `EncodingInfo`.
     pub const fn new(is_utf8: bool, has_bom: bool) -> Self {
-        Self { is_utf8, has_bom }
+        Self {
+            name: if is_utf8 { "UTF-8" } else { "unknown" },
+            is_utf8,
+            has_bom,
+        }
+    }
+
+    /// Create an `EncodingInfo` with an explicit encoding name.
+    pub const fn with_name(name: &'static str, is_utf8: bool, has_bom: bool) -> Self {
+        Self {
+            name,
+            is_utf8,
+            has_bom,
+        }
     }
 }
 
@@ -86,50 +136,21 @@ impl EncodingInfo {
 /// - UTF-16 LE/BE
 /// - And many more
 ///
-/// Returns (`transcoded_data`, `was_transcoded`). If `was_transcoded` is false,
-/// the original data is returned as-is (it was already valid UTF-8).
-pub fn detect_and_transcode(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, bool) {
-    // Check for UTF-16 BOM first (chardetng doesn't handle these well)
-    if data.len() >= 2 {
-        // UTF-16 LE BOM: FF FE
-        if data[0] == 0xFF && data[1] == 0xFE {
-            let (decoded, _, _) = encoding_rs::UTF_16LE.decode(data);
-            return (
-                std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
-                true,
-            );
-        }
-        // UTF-16 BE BOM: FE FF
-        if data[0] == 0xFE && data[1] == 0xFF {
-            let (decoded, _, _) = encoding_rs::UTF_16BE.decode(data);
-            return (
-                std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
-                true,
-            );
-        }
-    }
+/// Returns the UTF-8 working data and metadata for the original encoding.
+/// The UTF-8 check tolerates an incomplete final code point because the
+/// sniffer operates on samples that may end between bytes of a character.
+pub fn detect_and_transcode(data: &[u8]) -> (std::borrow::Cow<'_, [u8]>, EncodingInfo) {
+    let (encoding, encoding_info) = detect_encoding_impl(data, is_utf8_ignoring_truncated_tail);
 
-    // Check if already valid UTF-8
-    if is_utf8(data) {
-        return (std::borrow::Cow::Borrowed(data), false);
-    }
-
-    // Use chardetng to detect encoding
-    let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
-    detector.feed(data, true);
-    let encoding = detector.guess(None, Utf8Detection::Allow);
-
-    // If detected as UTF-8, return as-is (might have some invalid bytes)
+    // UTF-8 input can be parsed without allocating a transcoded copy.
     if encoding == encoding_rs::UTF_8 {
-        return (std::borrow::Cow::Borrowed(data), false);
+        return (std::borrow::Cow::Borrowed(data), encoding_info);
     }
 
     // Transcode to UTF-8
     let (decoded, _, _) = encoding.decode(data);
-    (
-        std::borrow::Cow::Owned(decoded.into_owned().into_bytes()),
-        true,
-    )
+    let transcoded = std::borrow::Cow::Owned(decoded.into_owned().into_bytes());
+    (transcoded, encoding_info)
 }
 
 #[cfg(test)]
@@ -165,12 +186,20 @@ mod tests {
     #[test]
     fn test_detect_encoding() {
         let info = detect_encoding(b"Hello");
+        assert_eq!(info.name, "UTF-8");
         assert!(info.is_utf8);
         assert!(!info.has_bom);
 
         let with_bom = [0xEF, 0xBB, 0xBF, b'H', b'i'];
         let info = detect_encoding(&with_bom);
+        assert_eq!(info.name, "UTF-8");
         assert!(info.is_utf8);
+        assert!(info.has_bom);
+
+        let utf16le = [0xFF, 0xFE, b'H', 0x00];
+        let info = detect_encoding(&utf16le);
+        assert_eq!(info.name, "UTF-16LE");
+        assert!(!info.is_utf8);
         assert!(info.has_bom);
     }
 
@@ -194,21 +223,21 @@ mod tests {
 
     #[test]
     fn test_detect_and_transcode_utf8() {
-        // Valid UTF-8 should not be transcoded
+        // Valid UTF-8 should not be transcoded and should report its encoding.
         let data = b"Hello, World!";
-        let (result, was_transcoded) = detect_and_transcode(data);
-        assert!(!was_transcoded);
+        let (result, encoding) = detect_and_transcode(data);
         assert_eq!(&result[..], data);
+        assert_eq!(encoding, EncodingInfo::with_name("UTF-8", true, false));
     }
 
     #[test]
     fn test_detect_and_transcode_utf16_le() {
         // UTF-16 LE with BOM: "Hi"
         let data: &[u8] = &[0xFF, 0xFE, b'H', 0x00, b'i', 0x00];
-        let (result, was_transcoded) = detect_and_transcode(data);
-        assert!(was_transcoded);
+        let (result, encoding) = detect_and_transcode(data);
         // Result should be UTF-8 (without BOM marker in content)
         assert!(is_utf8(&result));
+        assert_eq!(encoding, EncodingInfo::with_name("UTF-16LE", false, true));
     }
 
     #[test]
@@ -216,10 +245,11 @@ mod tests {
         // Windows-1251 encoded Cyrillic text: "Привет" (Hello in Russian)
         // П=0xCF, р=0xF0, и=0xE8, в=0xE2, е=0xE5, т=0xF2
         let data: &[u8] = &[0xCF, 0xF0, 0xE8, 0xE2, 0xE5, 0xF2];
-        let (result, was_transcoded) = detect_and_transcode(data);
-        // Should be transcoded since it's not valid UTF-8
-        assert!(was_transcoded);
+        let (result, encoding) = detect_and_transcode(data);
         // Result should be valid UTF-8
         assert!(is_utf8(&result));
+        assert_eq!(encoding.name, "windows-1251");
+        assert!(!encoding.is_utf8);
+        assert!(!encoding.has_bom);
     }
 }

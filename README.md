@@ -56,6 +56,7 @@ let metadata = sniffer.sniff_path("data.csv").unwrap();
 
 println!("Delimiter: {}", metadata.dialect.delimiter as char);
 println!("Has header: {}", metadata.dialect.header.has_header_row);
+println!("Encoding: {}", metadata.encoding.name);
 println!("Fields: {:?}", metadata.fields);
 println!("Types: {:?}", metadata.types);
 ```
@@ -80,6 +81,8 @@ File: /tmp/NYC_311_SR_2010-2020-sample-1M.csv
   Has header: true
   Preamble rows: 0
   Flexible: false
+  Encoding: UTF-8
+  Encoding BOM: false
   UTF-8: true
   Fields: 41
   Avg record length: 547 bytes

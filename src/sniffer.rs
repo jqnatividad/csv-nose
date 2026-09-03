@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
 
-use crate::encoding::{detect_and_transcode, is_utf8_ignoring_truncated_tail, skip_bom};
+use crate::encoding::{detect_and_transcode, skip_bom};
 use crate::error::{Result, SnifferError};
 use crate::field_type::Type;
 use crate::metadata::{Dialect, Header, Metadata, Quote};
@@ -113,21 +113,8 @@ impl Sniffer {
             return Err(SnifferError::EmptyData);
         }
 
-        // Detect encoding info from the *original* bytes, before transcoding.
-        // `encoding_rs::decode` always emits valid UTF-8, substituting
-        // replacement characters for malformed input, so inspecting the
-        // transcoded bytes reports `is_utf8: true` for every input.
-        //
-        // Samples are cut at a raw byte offset, so tolerate a multi-byte
-        // character split by that boundary. `detect_encoding` stays strict for
-        // callers who hold complete input.
-        let is_utf8 = is_utf8_ignoring_truncated_tail(skip_bom(data));
-
-        // Detect encoding and transcode to UTF-8 if necessary. The second
-        // return value (whether a transcode happened) has no remaining reader;
-        // leave it in place pending the encoding-metadata work in #44, which
-        // reworks this signature to surface the detected encoding itself.
-        let (transcoded_data, _) = detect_and_transcode(data);
+        // Detect the original encoding and transcode once for CSV parsing.
+        let (transcoded_data, encoding_info) = detect_and_transcode(data);
         let data = &transcoded_data[..];
 
         // Skip BOM
@@ -191,7 +178,7 @@ impl Sniffer {
         // Pass total_preamble_rows for Header metadata (to report true preamble count in original file)
         self.build_metadata(
             best,
-            is_utf8,
+            encoding_info,
             structural_preamble,
             total_preamble_rows,
             &table_for_preamble,
@@ -289,7 +276,7 @@ impl Sniffer {
     fn build_metadata(
         &self,
         score: &DialectScore,
-        is_utf8: bool,
+        encoding: crate::encoding::EncodingInfo,
         structural_preamble: usize,
         total_preamble_rows: usize,
         table: &Table,
@@ -346,19 +333,20 @@ impl Sniffer {
             header,
             quote: score.dialect.quote,
             flexible: !score.is_uniform,
-            is_utf8,
+            is_utf8: encoding.is_utf8,
         };
 
         // Calculate average record length from the raw data
         let avg_record_len = calculate_avg_record_len(data, table.num_rows());
 
-        Ok(Metadata {
+        Ok(Metadata::with_encoding(
             dialect,
+            encoding,
             avg_record_len,
-            num_fields: score.num_fields,
+            score.num_fields,
             fields,
             types,
-        })
+        ))
     }
 }
 
