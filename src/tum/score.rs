@@ -588,7 +588,7 @@ fn separator_is_structural(data: &[u8], sep: u8) -> bool {
 /// structure (`separator_is_structural`).
 fn trusted_boundary_separators(data: &[u8]) -> [bool; 256] {
     use super::potential_dialects::DELIMITERS;
-    const COMMON: [u8; 4] = [b',', b';', b'\t', b'|'];
+    const COMMON: [u8; 4] = *b",;\t|";
 
     let mut adjacent_to_quote = [false; 256];
     for (i, &b) in data.iter().enumerate() {

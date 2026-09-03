@@ -95,7 +95,7 @@ impl Table {
                 .max_by(|(fc_a, count_a), (fc_b, count_b)| {
                     count_a.cmp(count_b).then_with(|| fc_a.cmp(fc_b))
                 })
-                .map_or((0, 0), |(fc, count)| (fc, count))
+                .unwrap_or((0, 0))
         }
     }
 
