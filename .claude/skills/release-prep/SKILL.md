@@ -27,12 +27,20 @@ Prepare a new csv-nose release. Takes an optional version number argument.
    - Tag: `v{version}`
    - Title: `v{version}`
    - Use `--draft` so the user can review before publishing
-   - Pass the CHANGELOG.md entry for this version as release notes using `--notes-file` (write the entry to a temp file and delete it afterwards) or inline via `--notes`. For the inline approach, set `VERSION` to the actual version number (e.g. `0.9.0`) before running:
+   - Pass the CHANGELOG.md entry for this version as release notes via `--notes-file`. Extract it with `awk` into a temp file you delete afterwards:
      ```bash
      VERSION="0.9.0"  # ← replace this with the actual version
-     --notes "$(awk "/## v$VERSION/{f=1; print; next} f && /## v[0-9]/{exit} f" CHANGELOG.md)"
+     NOTES=$(mktemp)
+     awk -v pre="## [$VERSION]" 'index($0,pre)==1{f=1;next} f && /^## \[/{exit} f && (NF||seen){seen=1;print}' CHANGELOG.md > "$NOTES"
+     [ -s "$NOTES" ] || { echo "ERROR: no CHANGELOG section found for $VERSION"; rm -f "$NOTES"; exit 1; }
+     gh release create "v$VERSION" --draft --title "v$VERSION" --notes-file "$NOTES"
+     rm -f "$NOTES"
      ```
-     If using `--notes-file`, remember to delete the temp file after the `gh release create` command completes.
+     Three things this gets right, each of which was previously wrong:
+     - **Bracketed heading, no `v`.** This project's CHANGELOG headings look like `## [1.3.0] - 2026-09-03`, while the git tags are `v1.3.0`. A pattern like `## v$VERSION` matches nothing and hands `gh` an **empty release body without erroring** — which is exactly what happened during the 1.3.0 release. The `-s` guard is what turns that silent failure into a loud one; do not drop it.
+     - **`index()` rather than a regex**, so the dots in `1.3.0` are matched literally instead of as wildcards.
+     - **The heading line is skipped** (`next`, not `print`) since the release title already carries the version, and leading blank lines are trimmed — matching how the published v1.2.0 and earlier release bodies read.
+
      Do NOT use `--generate-notes` (that pulls from PR history, not CHANGELOG).
    - Before running `gh release create`, ensure the tag exists and is pushed. Create an annotated tag if it doesn't exist locally, then push it:
      ```
