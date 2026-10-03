@@ -78,6 +78,24 @@ fn is_boolean(s: &str) -> bool {
     }
 }
 
+/// `is_match` against a per-thread clone of a shared pattern.
+///
+/// A shared `Regex` gives only its first-using thread the lock-free cache fast
+/// path; every other thread takes a mutex-protected cache stack. Dialect
+/// scoring runs `detect_cell_type` on every cell from many rayon threads, so
+/// the shared statics were contended. `Regex::clone` shares the compiled
+/// program but builds a fresh cache pool, so each thread owns its own pool.
+/// Thread-local (not leaked) so a long-lived process that churns threads
+/// doesn't accumulate caches.
+macro_rules! tl_is_match {
+    ($pat:ident, $s:expr) => {{
+        thread_local! {
+            static TL: regex::Regex = $pat.clone();
+        }
+        TL.with(|re| re.is_match($s))
+    }};
+}
+
 /// Detect the type of a single cell value.
 #[inline]
 pub fn detect_cell_type(value: &str) -> Type {
@@ -115,24 +133,26 @@ pub fn detect_cell_type(value: &str) -> Type {
     // and an exponent marker and are therefore not matched here.
     let has_dot = trimmed.contains('.');
     let has_exp = trimmed.contains('e') || trimmed.contains('E');
-    if (has_dot || has_exp) && FLOAT_PATTERN.is_match(trimmed) {
+    if (has_dot || has_exp) && tl_is_match!(FLOAT_PATTERN, trimmed) {
         return Type::Float;
     }
 
     // Check for float with thousand separators
-    if (trimmed.contains(',') || has_dot) && FLOAT_THOUSANDS_PATTERN.is_match(trimmed) {
+    if (trimmed.contains(',') || has_dot) && tl_is_match!(FLOAT_THOUSANDS_PATTERN, trimmed) {
         return Type::Float;
     }
 
     // Check for ISO datetime first (more specific)
-    if DATETIME_ISO_PATTERN.is_match(trimmed) || DATETIME_GENERAL_PATTERN.is_match(trimmed) {
+    if tl_is_match!(DATETIME_ISO_PATTERN, trimmed)
+        || tl_is_match!(DATETIME_GENERAL_PATTERN, trimmed)
+    {
         return Type::DateTime;
     }
 
     // Check for dates
-    if DATE_ISO_PATTERN.is_match(trimmed)
-        || DATE_US_PATTERN.is_match(trimmed)
-        || DATE_EURO_PATTERN.is_match(trimmed)
+    if tl_is_match!(DATE_ISO_PATTERN, trimmed)
+        || tl_is_match!(DATE_US_PATTERN, trimmed)
+        || tl_is_match!(DATE_EURO_PATTERN, trimmed)
     {
         return Type::Date;
     }
