@@ -353,6 +353,33 @@ impl DialectScore {
         }
     }
 
+    /// Re-target a score to another dialect that parses `table` identically.
+    ///
+    /// Only gamma depends on the dialect (via the delimiter penalty), so this
+    /// equals `DialectScore::new(dialect, table, self.type_score)` without
+    /// recomputing the table-wide uniformity, type and pattern statistics.
+    fn for_dialect(&self, dialect: PotentialDialect, table: &Table) -> Self {
+        let gamma = compute_gamma(
+            self.tau_0,
+            self.tau_1,
+            self.type_score,
+            self.pattern_score,
+            table,
+            dialect.delimiter,
+        );
+        Self {
+            dialect,
+            gamma,
+            tau_0: self.tau_0,
+            tau_1: self.tau_1,
+            type_score: self.type_score,
+            pattern_score: self.pattern_score,
+            num_rows: self.num_rows,
+            num_fields: self.num_fields,
+            is_uniform: self.is_uniform,
+        }
+    }
+
     /// Create a zero score (for failed parses).
     pub const fn zero(dialect: PotentialDialect) -> Self {
         Self {
@@ -716,26 +743,43 @@ fn dquoted_delimiter_counts(data: &[u8], delimiter: u8) -> (usize, usize) {
     (inside, outside)
 }
 
-/// Score a dialect against pre-normalized data with pre-computed quote counts.
-///
-/// This variant assumes the data has already been normalized to LF line endings
-/// for better performance when scoring multiple dialects.
-fn score_dialect_with_normalized_data(
+/// Parse pre-normalized data with `parse_dialect` and compute the table-wide
+/// part of its score. The score is `None` when the parse is empty.
+fn base_score(
     normalized_data: &[u8],
-    dialect: &PotentialDialect,
+    parse_dialect: &PotentialDialect,
     max_rows: usize,
-    quote_counts: &QuoteCounts,
-    boundary_counts: &QuoteBoundaryCounts,
     buffers: &mut TypeScoreBuffers,
-) -> (DialectScore, Table) {
-    let table = parse_table_normalized(normalized_data, dialect, max_rows);
+) -> (Option<DialectScore>, Table) {
+    let table = parse_table_normalized(normalized_data, parse_dialect, max_rows);
 
     if table.is_empty() {
-        return (DialectScore::zero(dialect.clone()), table);
+        return (None, table);
     }
 
     let type_score = calculate_type_score(&table, buffers);
-    let mut score = DialectScore::new(dialect.clone(), &table, type_score);
+    let score = DialectScore::new(parse_dialect.clone(), &table, type_score);
+    (Some(score), table)
+}
+
+/// Score a dialect against pre-normalized data with pre-computed quote counts.
+///
+/// `base` and `table` come from `base_score` for a parse that is identical to
+/// parsing with `dialect` (possibly shared with other dialects), and the data
+/// must already be normalized to LF line endings.
+fn score_dialect_with_normalized_data(
+    normalized_data: &[u8],
+    dialect: &PotentialDialect,
+    base: Option<&DialectScore>,
+    table: &Table,
+    quote_counts: &QuoteCounts,
+    boundary_counts: &QuoteBoundaryCounts,
+) -> DialectScore {
+    let Some(base) = base else {
+        return DialectScore::zero(dialect.clone());
+    };
+
+    let mut score = base.for_dialect(dialect.clone(), table);
 
     // Apply quote evidence scoring using pre-computed counts and cached boundary counts
     let quote_multiplier =
@@ -902,7 +946,7 @@ fn score_dialect_with_normalized_data(
         }
     }
 
-    (score, table)
+    score
 }
 
 /// Calculate a score multiplier based on quote character evidence in the data.
@@ -1377,6 +1421,8 @@ pub fn score_all_dialects_with_best_table(
     dialects: &[PotentialDialect],
     max_rows: usize,
 ) -> (Vec<DialectScore>, Option<(PotentialDialect, Table)>) {
+    use crate::metadata::Quote;
+
     // Pre-compute quote counts once for all dialect evaluations
     let quote_counts = QuoteCounts::new(data);
 
@@ -1401,20 +1447,58 @@ pub fn score_all_dialects_with_best_table(
     // Pre-compute quote boundary counts for all delimiters in one pass (on normalized data)
     let boundary_counts = QuoteBoundaryCounts::new(normalized_bytes, &delimiters);
 
-    // Score all dialects in parallel, using per-thread reusable TypeScoreBuffers
-    let pairs: Vec<(DialectScore, Table)> = dialects
-        .par_iter()
+    // Dialects that must parse to identical tables share one parse. A quote char
+    // that never occurs quotes nothing, exactly like `Quote::None`; and every
+    // delimiter that never occurs yields the same one-field-per-line table.
+    // Every dialect is still scored, so selection sees the full candidate set.
+    let mut present = [None::<bool>; 256];
+    let mut is_present =
+        |b: u8| *present[b as usize].get_or_insert_with(|| normalized_bytes.contains(&b));
+    let mut parse_dialects: Vec<PotentialDialect> = Vec::new();
+    let mut parse_keys: Vec<(Option<u8>, Quote)> = Vec::new();
+    let parse_index: Vec<usize> = dialects
+        .iter()
         .map(|d| {
-            BUFFERS.with(|b| {
-                score_dialect_with_normalized_data(
-                    normalized_bytes,
-                    d,
-                    max_rows,
-                    &quote_counts,
-                    &boundary_counts,
-                    &mut b.borrow_mut(),
-                )
-            })
+            let delimiter = is_present(d.delimiter).then_some(d.delimiter);
+            let quote = match d.quote {
+                Quote::Some(q) if !is_present(q) => Quote::None,
+                q => q,
+            };
+            let key = (delimiter, quote);
+            parse_keys
+                .iter()
+                .position(|k| *k == key)
+                .unwrap_or_else(|| {
+                    parse_keys.push(key);
+                    parse_dialects.push(PotentialDialect::new(
+                        d.delimiter,
+                        quote,
+                        d.line_terminator,
+                    ));
+                    parse_keys.len() - 1
+                })
+        })
+        .collect();
+
+    // Parse and compute table-wide scores in parallel, using per-thread reusable TypeScoreBuffers
+    let mut parsed: Vec<(Option<DialectScore>, Table)> = parse_dialects
+        .par_iter()
+        .map(|pd| BUFFERS.with(|b| base_score(normalized_bytes, pd, max_rows, &mut b.borrow_mut())))
+        .collect();
+
+    let mut scores: Vec<DialectScore> = dialects
+        .par_iter()
+        .zip(parse_index.par_iter())
+        .map(|(d, &p)| {
+            let (base, table) = &parsed[p];
+            score_dialect_with_normalized_data(
+                normalized_bytes,
+                d,
+                base.as_ref(),
+                table,
+                &quote_counts,
+                &boundary_counts,
+            )
         })
         .collect();
 
@@ -1422,18 +1506,17 @@ pub fn score_all_dialects_with_best_table(
     // with the lower index (earlier in `dialects`) wins — matching the
     // original sequential `if score.gamma > best_gamma` loop which used
     // strict `>` so the first winner was never displaced by a tie.
-    let best_table = pairs
+    let best_table = scores
         .iter()
         .enumerate()
         .max_by(|(i, a), (j, b)| {
-            a.0.gamma
-                .partial_cmp(&b.0.gamma)
+            a.gamma
+                .partial_cmp(&b.gamma)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| j.cmp(i)) // lower index wins on tie
         })
-        .map(|(_, (s, t))| (s.dialect.clone(), t.clone()));
-
-    let mut scores: Vec<DialectScore> = pairs.into_iter().map(|(s, _)| s).collect();
+        .map(|(i, s)| (i, s.dialect.clone()))
+        .map(|(i, dialect)| (dialect, parsed.swap_remove(parse_index[i]).1));
 
     // Sort by gamma score descending
     scores.sort_by(|a, b| {
@@ -2290,6 +2373,45 @@ mod tests {
             "semicolon ({}) should outscore the degenerate tab parse ({})",
             semi_score.gamma,
             tab_score.gamma
+        );
+    }
+
+    #[test]
+    fn test_shared_parses_score_like_individual_parses() {
+        // No `'` (so `'` variants share the `Quote::None` parse) and most
+        // delimiters absent (so their candidates share one single-field parse).
+        let data = b"id,name,score\n1,\"Smith; John\",3.5\n2,Ann,4.0\n3,Bob,2.25\n4,Cy,1.0\n";
+        let dialects =
+            crate::tum::potential_dialects::generate_dialects_with_terminator(LineTerminator::LF);
+        let (shared, best) = score_all_dialects_with_best_table(data, &dialects, 0);
+
+        let mut delimiters: Vec<u8> = dialects.iter().map(|d| d.delimiter).collect();
+        delimiters.dedup();
+        let quote_counts = QuoteCounts::new(data);
+        let boundary_counts = QuoteBoundaryCounts::new(data, &delimiters);
+        let mut buffers = TypeScoreBuffers::new();
+        for d in &dialects {
+            let (base, table) = base_score(data, d, 0, &mut buffers);
+            let own = score_dialect_with_normalized_data(
+                data,
+                d,
+                base.as_ref(),
+                &table,
+                &quote_counts,
+                &boundary_counts,
+            );
+            let s = shared
+                .iter()
+                .find(|s| s.dialect == *d)
+                .expect("dialect scored");
+            assert_eq!(s.gamma.to_bits(), own.gamma.to_bits(), "{d:?}");
+        }
+
+        let (best_dialect, best_table) = best.expect("best table");
+        assert_eq!(best_dialect.delimiter, b',');
+        assert_eq!(
+            best_table.rows,
+            parse_table_normalized(data, &best_dialect, 0).rows
         );
     }
 }
