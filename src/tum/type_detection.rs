@@ -268,30 +268,35 @@ fn compute_consistency_from_counts(type_counts: &[usize; Type::COUNT], total_cel
     max_non_null as f64 / non_null_total as f64
 }
 
-/// Infer the type for each column in a table.
-pub fn infer_column_types(table: &Table) -> Vec<Type> {
-    let num_cols = table.modal_field_count();
-    let mut types = Vec::with_capacity(num_cols);
+/// Infer the type for each of the first `num_cols` columns of `rows`.
+///
+/// Rows are processed in parallel chunks and the per-chunk results combined;
+/// this gives the same answer as a sequential scan because `Type::merge` is a
+/// join (associative and commutative, with `NULL` as identity).
+pub fn infer_column_types(rows: &[Vec<String>], num_cols: usize) -> Vec<Type> {
+    use rayon::prelude::*;
 
-    for col_idx in 0..num_cols {
-        types.push(infer_single_column_type(table, col_idx));
-    }
-
-    types
-}
-
-/// Infer the type for a single column.
-fn infer_single_column_type(table: &Table, col_idx: usize) -> Type {
-    let mut merged_type = Type::NULL;
-
-    for row in &table.rows {
-        if col_idx < row.len() {
-            let cell_type = detect_cell_type(&row[col_idx]);
-            merged_type = merged_type.merge(cell_type);
-        }
-    }
-
-    merged_type
+    rows.par_iter()
+        // Keep typical samples (~100 rows) in a single task.
+        .with_min_len(1024)
+        .fold(
+            || vec![Type::NULL; num_cols],
+            |mut acc, row| {
+                for (merged, cell) in acc.iter_mut().zip(row) {
+                    *merged = merged.merge(detect_cell_type(cell));
+                }
+                acc
+            },
+        )
+        .reduce(
+            || vec![Type::NULL; num_cols],
+            |mut a, b| {
+                for (x, y) in a.iter_mut().zip(b) {
+                    *x = x.merge(y);
+                }
+                a
+            },
+        )
 }
 
 pub fn pattern_specificity_score(value: &str) -> f64 {
@@ -381,7 +386,7 @@ mod tests {
         table.field_counts = vec![3, 3, 3];
         table.update_modal_field_count();
 
-        let types = infer_column_types(&table);
+        let types = infer_column_types(&table.rows, table.modal_field_count());
         assert_eq!(types, vec![Type::Unsigned, Type::Text, Type::Date]);
     }
 
