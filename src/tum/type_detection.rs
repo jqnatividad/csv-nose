@@ -294,26 +294,28 @@ fn infer_single_column_type(table: &Table, col_idx: usize) -> Type {
     merged_type
 }
 
-/// Calculate the pattern score for a value.
-///
-/// This gives a weighted score based on how specific the detected pattern is.
-/// More specific patterns (like datetime) score higher than generic ones (like text).
 pub fn pattern_specificity_score(value: &str) -> f64 {
+    // One `RegexSet` scan replaces the ordered per-pattern loop: the lowest
+    // matching index is exactly the first pattern the loop would have hit.
+    // Per-thread clone for the same reason as `tl_is_match!`: this runs on
+    // every cell of every candidate dialect from rayon workers, and a shared
+    // set would contend on its cache pool.
+    thread_local! {
+        static TL_SET: regex::RegexSet = PATTERN_SET.clone();
+    }
+
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
         return 0.0;
     }
 
-    // Check patterns in order of specificity (uses cached static slice)
-    for pc in get_pattern_categories() {
-        if pc.pattern.is_match(trimmed) {
-            return pc.weight;
-        }
-    }
-
-    // Text is the fallback with lowest specificity
-    0.1
+    TL_SET.with(|set| {
+        set.matches(trimmed)
+            .iter()
+            .next()
+            .map_or(0.1, |i| get_pattern_categories()[i].weight) // Text fallback: lowest specificity
+    })
 }
 
 /// Calculate the average pattern specificity score for a table.
@@ -381,5 +383,69 @@ mod tests {
 
         let types = infer_column_types(&table);
         assert_eq!(types, vec![Type::Unsigned, Type::Text, Type::Date]);
+    }
+
+    #[test]
+    fn test_pattern_specificity_matches_ordered_loop() {
+        // The RegexSet must pick the same weight as checking each pattern in
+        // order and returning the first match.
+        fn ordered(value: &str) -> f64 {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return 0.0;
+            }
+            get_pattern_categories()
+                .iter()
+                .find(|pc| pc.pattern.is_match(trimmed))
+                .map_or(0.1, |pc| pc.weight)
+        }
+
+        let cells = [
+            "",
+            "   ",
+            "NULL",
+            "null",
+            "Nil",
+            "N/A",
+            "#DIV/0!",
+            "-",
+            "true",
+            "FALSE",
+            "yes",
+            "y",
+            "1",
+            "0",
+            "42",
+            "+42",
+            "-42",
+            "3.14",
+            "-1e10",
+            ".5",
+            "1,5",
+            "1,234,567.89",
+            "2023-12-31",
+            "12/31/2023",
+            "31.12.2023",
+            "2023-12-31T12:30:45Z",
+            "2023/1/2 3:04 PM",
+            "12:30",
+            "12:30:45.5 am",
+            "a@b.com",
+            "https://x.org/p?q=1",
+            "192.168.0.1",
+            "$1,234.50",
+            "100 €",
+            "45%",
+            "-3.5 %",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "abc_123",
+            "Alice",
+            "Smith, John",
+            "free text with spaces",
+            "  padded  ",
+        ];
+        for c in cells {
+            assert_eq!(pattern_specificity_score(c), ordered(c), "cell {c:?}");
+        }
     }
 }
