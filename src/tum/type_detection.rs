@@ -391,6 +391,55 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_column_types_parallel_matches_sequential() {
+        // Enough rows to split into several rayon chunks (min chunk 1024), with
+        // the type-promoting cells placed in different chunks and ragged rows.
+        let n = 6000;
+        let rows: Vec<Vec<String>> = (0..n)
+            .map(|i| {
+                let promote = match i {
+                    10 => "-7",    // Signed, first chunk
+                    3000 => "2.5", // Float, middle chunk
+                    _ => "42",     // Unsigned
+                };
+                let temporal = match i {
+                    20 => "2023-12-31T12:30:45", // DateTime, first chunk
+                    5900 => "2023-12-31",        // Date, last chunk
+                    _ => "",                     // NULL
+                };
+                let mixed = if i == 5990 { "true" } else { "7" }; // Boolean + Unsigned -> Text
+                let mut row = vec![promote.to_string(), temporal.to_string(), String::new()];
+                match i % 7 {
+                    0 => {}                                          // short row: no 4th column
+                    1 => row.extend([mixed.into(), "extra".into()]), // longer than num_cols
+                    _ => row.push(mixed.into()),
+                }
+                row
+            })
+            .collect();
+        let num_cols = 4;
+
+        let sequential: Vec<Type> = (0..num_cols)
+            .map(|c| {
+                rows.iter()
+                    .filter_map(|r| r.get(c))
+                    .fold(Type::NULL, |t, cell| t.merge(detect_cell_type(cell)))
+            })
+            .collect();
+        assert_eq!(
+            sequential,
+            vec![Type::Float, Type::DateTime, Type::NULL, Type::Text]
+        );
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        let parallel = pool.install(|| infer_column_types(&rows, num_cols));
+        assert_eq!(parallel, sequential);
+    }
+
+    #[test]
     fn test_pattern_specificity_matches_ordered_loop() {
         // The RegexSet must pick the same weight as checking each pattern in
         // order and returning the first match.
