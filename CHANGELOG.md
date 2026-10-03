@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-03
+
+### Performance
+
+- Pattern-specificity scoring matches each cell against a single per-thread `RegexSet` instead of up to 17 shared regexes in turn. The old loop ran on every cell of every candidate dialect from rayon workers, so text cells were scanned by every pattern and every thread contended on the shared regex cache pools. The lowest matching index of the set is the first match of the old ordered scan, so scores are unchanged ([#55](https://github.com/jqnatividad/csv-nose/pull/55))
+- Candidate dialects that must produce identical tables now share a single parse: a quote character that never occurs in the sample quotes nothing (the same as no quoting), and every delimiter that never occurs yields the same one-field-per-line table. Table-wide statistics are computed once per shared parse and only the delimiter-dependent part of the score is recomputed per dialect. Every dialect is still scored, so selection sees the full candidate set. The winning table is moved rather than cloned ([#55](https://github.com/jqnatividad/csv-nose/pull/55))
+- Metadata building no longer copies the winning table, and column types are inferred in one row-wise pass split across threads instead of one serial pass per column ([#55](https://github.com/jqnatividad/csv-nose/pull/55))
+- `detect_cell_type` matches against per-thread clones of its regexes, so rayon workers no longer contend on shared cache pools ([#54](https://github.com/jqnatividad/csv-nose/pull/54))
+- Net effect on a release build: sniffing an 82 MB file with `--all` drops from 7.6 s and ~9.3 GB peak memory to 1.6 s and ~1.1 GB, and the benchmark suites run 1.2×–2.4× faster. Detection results are byte-identical: all five benchmark suites give the same per-file outcome, and JSON output matches on all 543 corpus files with both default sampling and `--all`
+- Trade-off: building the `RegexSet` adds a one-time cost of roughly 1–3 ms per process, so a single sniff of a small file with default sampling can be slightly slower than 1.3.0. The cost is paid once per process and amortized across files
+
+### Changed
+
+- Dependency updates, including `clap` 4.6.7, `thiserror` 2.0.21 and `encoding_rs` 0.8.42
+
+**Full Changelog**: https://github.com/jqnatividad/csv-nose/compare/v1.3.0...v1.4.0
+
 ## [1.3.0] - 2026-09-03
 
 ### Added
