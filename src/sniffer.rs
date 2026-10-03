@@ -2,7 +2,6 @@
 //!
 //! This module provides the qsv-sniffer compatible API.
 
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
@@ -286,26 +285,21 @@ impl Sniffer {
             return Err(SnifferError::EmptyData);
         }
 
-        // Create a view of the table without structural preamble
-        // (comment preamble rows are already stripped from data)
-        // Use Cow to avoid cloning in the common no-preamble case
-        let effective_table: Cow<'_, Table> =
-            if structural_preamble > 0 && table.rows.len() > structural_preamble {
-                let mut et = Table::new();
-                et.rows = table.rows[structural_preamble..].to_vec();
-                et.field_counts = table.field_counts[structural_preamble..].to_vec();
-                et.update_modal_field_count();
-                Cow::Owned(et)
-            } else {
-                Cow::Borrowed(table)
-            };
+        // View the table without structural preamble as slices, so no rows are
+        // copied (comment preamble rows are already stripped from data)
+        let preamble_skip = if structural_preamble > 0 && table.rows.len() > structural_preamble {
+            structural_preamble
+        } else {
+            0
+        };
+        let effective_rows = &table.rows[preamble_skip..];
 
-        // Detect header on the effective table (pass total_preamble_rows for Header metadata)
-        let header = detect_header(&effective_table, total_preamble_rows);
+        // Detect header on the effective rows (pass total_preamble_rows for Header metadata)
+        let header = detect_header(effective_rows, total_preamble_rows);
 
-        // Get field names from the effective table (first row after structural preamble)
-        let fields = if header.has_header_row && !effective_table.rows.is_empty() {
-            effective_table.rows[0].clone()
+        // Get field names from the effective rows (first row after structural preamble)
+        let fields = if header.has_header_row && !effective_rows.is_empty() {
+            effective_rows[0].clone()
         } else {
             // Generate field names
             (0..score.num_fields)
@@ -314,18 +308,15 @@ impl Sniffer {
         };
 
         // Skip header row for type inference if present
-        let data_table = if header.has_header_row && effective_table.rows.len() > 1 {
-            let mut dt = crate::tum::table::Table::new();
-            dt.rows = effective_table.rows[1..].to_vec();
-            dt.field_counts = effective_table.field_counts[1..].to_vec();
-            dt.update_modal_field_count();
-            dt
+        let data_start = if header.has_header_row && effective_rows.len() > 1 {
+            preamble_skip + 1
         } else {
-            effective_table.into_owned()
+            preamble_skip
         };
+        let (num_cols, _) = Table::compute_modal_field_count(&table.field_counts[data_start..]);
 
         // Infer types for each column
-        let types = infer_column_types(&data_table);
+        let types = infer_column_types(&table.rows[data_start..], num_cols);
 
         // Build dialect
         let dialect = Dialect {
@@ -353,18 +344,14 @@ impl Sniffer {
 /// Detect if the first row (after preamble) is likely a header row.
 ///
 /// Optimized: Computes type counts in a single pass without allocating Vecs.
-fn detect_header(table: &crate::tum::table::Table, preamble_rows: usize) -> Header {
-    if table.rows.is_empty() {
+fn detect_header(rows: &[Vec<String>], preamble_rows: usize) -> Header {
+    if rows.len() < 2 {
+        // Can't determine header with fewer than two rows
         return Header::new(false, preamble_rows);
     }
 
-    if table.rows.len() < 2 {
-        // Can't determine header with only one row
-        return Header::new(false, preamble_rows);
-    }
-
-    let first_row = &table.rows[0];
-    let second_row = &table.rows[1];
+    let first_row = &rows[0];
+    let second_row = &rows[1];
 
     // Heuristics for header detection:
     // 1. First row has different types than subsequent rows

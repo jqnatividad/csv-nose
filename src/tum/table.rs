@@ -55,7 +55,7 @@ impl Table {
     /// Optimized: Uses a frequency array for small field counts (≤256),
     /// falling back to HashMap for unusually wide tables.
     /// Returns `(modal_field_count, frequency)`.
-    fn compute_modal_field_count(field_counts: &[usize]) -> (usize, usize) {
+    pub(crate) fn compute_modal_field_count(field_counts: &[usize]) -> (usize, usize) {
         if field_counts.is_empty() {
             return (0, 0);
         }

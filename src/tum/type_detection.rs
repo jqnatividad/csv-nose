@@ -268,52 +268,59 @@ fn compute_consistency_from_counts(type_counts: &[usize; Type::COUNT], total_cel
     max_non_null as f64 / non_null_total as f64
 }
 
-/// Infer the type for each column in a table.
-pub fn infer_column_types(table: &Table) -> Vec<Type> {
-    let num_cols = table.modal_field_count();
-    let mut types = Vec::with_capacity(num_cols);
-
-    for col_idx in 0..num_cols {
-        types.push(infer_single_column_type(table, col_idx));
-    }
-
-    types
-}
-
-/// Infer the type for a single column.
-fn infer_single_column_type(table: &Table, col_idx: usize) -> Type {
-    let mut merged_type = Type::NULL;
-
-    for row in &table.rows {
-        if col_idx < row.len() {
-            let cell_type = detect_cell_type(&row[col_idx]);
-            merged_type = merged_type.merge(cell_type);
-        }
-    }
-
-    merged_type
-}
-
-/// Calculate the pattern score for a value.
+/// Infer the type for each of the first `num_cols` columns of `rows`.
 ///
-/// This gives a weighted score based on how specific the detected pattern is.
-/// More specific patterns (like datetime) score higher than generic ones (like text).
+/// Rows are processed in parallel chunks and the per-chunk results combined;
+/// this gives the same answer as a sequential scan because `Type::merge` is a
+/// join (associative and commutative, with `NULL` as identity).
+pub fn infer_column_types(rows: &[Vec<String>], num_cols: usize) -> Vec<Type> {
+    use rayon::prelude::*;
+
+    rows.par_iter()
+        // Keep typical samples (~100 rows) in a single task.
+        .with_min_len(1024)
+        .fold(
+            || vec![Type::NULL; num_cols],
+            |mut acc, row| {
+                for (merged, cell) in acc.iter_mut().zip(row) {
+                    *merged = merged.merge(detect_cell_type(cell));
+                }
+                acc
+            },
+        )
+        .reduce(
+            || vec![Type::NULL; num_cols],
+            |mut a, b| {
+                for (x, y) in a.iter_mut().zip(b) {
+                    *x = x.merge(y);
+                }
+                a
+            },
+        )
+}
+
 pub fn pattern_specificity_score(value: &str) -> f64 {
+    // One `RegexSet` scan replaces the ordered per-pattern loop: the lowest
+    // matching index is exactly the first pattern the loop would have hit.
+    // Per-thread clone for the same reason as `tl_is_match!`: this runs on
+    // every cell of every candidate dialect from rayon workers, and a shared
+    // set would contend on its cache pool.
+    thread_local! {
+        static TL_SET: regex::RegexSet = PATTERN_SET.clone();
+    }
+
     let trimmed = value.trim();
 
     if trimmed.is_empty() {
         return 0.0;
     }
 
-    // Check patterns in order of specificity (uses cached static slice)
-    for pc in get_pattern_categories() {
-        if pc.pattern.is_match(trimmed) {
-            return pc.weight;
-        }
-    }
-
-    // Text is the fallback with lowest specificity
-    0.1
+    TL_SET.with(|set| {
+        set.matches(trimmed)
+            .iter()
+            .next()
+            .map_or(0.1, |i| get_pattern_categories()[i].weight) // Text fallback: lowest specificity
+    })
 }
 
 /// Calculate the average pattern specificity score for a table.
@@ -379,7 +386,120 @@ mod tests {
         table.field_counts = vec![3, 3, 3];
         table.update_modal_field_count();
 
-        let types = infer_column_types(&table);
+        let types = infer_column_types(&table.rows, table.modal_field_count());
         assert_eq!(types, vec![Type::Unsigned, Type::Text, Type::Date]);
+    }
+
+    #[test]
+    fn test_infer_column_types_parallel_matches_sequential() {
+        // Enough rows to split into several rayon chunks (min chunk 1024), with
+        // the type-promoting cells placed in different chunks and ragged rows.
+        let n = 6000;
+        let rows: Vec<Vec<String>> = (0..n)
+            .map(|i| {
+                let promote = match i {
+                    10 => "-7",    // Signed, first chunk
+                    3000 => "2.5", // Float, middle chunk
+                    _ => "42",     // Unsigned
+                };
+                let temporal = match i {
+                    20 => "2023-12-31T12:30:45", // DateTime, first chunk
+                    5900 => "2023-12-31",        // Date, last chunk
+                    _ => "",                     // NULL
+                };
+                let mixed = if i == 5990 { "true" } else { "7" }; // Boolean + Unsigned -> Text
+                let mut row = vec![promote.to_string(), temporal.to_string(), String::new()];
+                match i % 7 {
+                    0 => {}                                          // short row: no 4th column
+                    1 => row.extend([mixed.into(), "extra".into()]), // longer than num_cols
+                    _ => row.push(mixed.into()),
+                }
+                row
+            })
+            .collect();
+        let num_cols = 4;
+
+        let sequential: Vec<Type> = (0..num_cols)
+            .map(|c| {
+                rows.iter()
+                    .filter_map(|r| r.get(c))
+                    .fold(Type::NULL, |t, cell| t.merge(detect_cell_type(cell)))
+            })
+            .collect();
+        assert_eq!(
+            sequential,
+            vec![Type::Float, Type::DateTime, Type::NULL, Type::Text]
+        );
+
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build()
+            .unwrap();
+        let parallel = pool.install(|| infer_column_types(&rows, num_cols));
+        assert_eq!(parallel, sequential);
+    }
+
+    #[test]
+    fn test_pattern_specificity_matches_ordered_loop() {
+        // The RegexSet must pick the same weight as checking each pattern in
+        // order and returning the first match.
+        fn ordered(value: &str) -> f64 {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                return 0.0;
+            }
+            get_pattern_categories()
+                .iter()
+                .find(|pc| pc.pattern.is_match(trimmed))
+                .map_or(0.1, |pc| pc.weight)
+        }
+
+        let cells = [
+            "",
+            "   ",
+            "NULL",
+            "null",
+            "Nil",
+            "N/A",
+            "#DIV/0!",
+            "-",
+            "true",
+            "FALSE",
+            "yes",
+            "y",
+            "1",
+            "0",
+            "42",
+            "+42",
+            "-42",
+            "3.14",
+            "-1e10",
+            ".5",
+            "1,5",
+            "1,234,567.89",
+            "2023-12-31",
+            "12/31/2023",
+            "31.12.2023",
+            "2023-12-31T12:30:45Z",
+            "2023/1/2 3:04 PM",
+            "12:30",
+            "12:30:45.5 am",
+            "a@b.com",
+            "https://x.org/p?q=1",
+            "192.168.0.1",
+            "$1,234.50",
+            "100 €",
+            "45%",
+            "-3.5 %",
+            "123e4567-e89b-12d3-a456-426614174000",
+            "abc_123",
+            "Alice",
+            "Smith, John",
+            "free text with spaces",
+            "  padded  ",
+        ];
+        for c in cells {
+            assert_eq!(pattern_specificity_score(c), ordered(c), "cell {c:?}");
+        }
     }
 }

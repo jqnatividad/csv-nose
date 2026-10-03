@@ -232,6 +232,13 @@ pub fn get_pattern_categories() -> &'static [PatternCategory] {
     &PATTERN_CATEGORIES
 }
 
+/// All pattern categories compiled into one set, in `PATTERN_CATEGORIES` order,
+/// so the lowest matching index is the first category an ordered scan would hit.
+pub static PATTERN_SET: std::sync::LazyLock<regex::RegexSet> = std::sync::LazyLock::new(|| {
+    regex::RegexSet::new(PATTERN_CATEGORIES.iter().map(|pc| pc.pattern.as_str()))
+        .expect("Invalid pattern category set")
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
