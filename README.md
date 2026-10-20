@@ -1,6 +1,6 @@
 [![Crates.io](https://img.shields.io/crates/v/csv-nose.svg?logo=crates.io)](https://crates.io/crates/csv-nose)
 [![Docs.rs](https://docs.rs/csv-nose/badge.svg)](https://docs.rs/crate/csv-nose)
-![License: MIT](https://img.shields.io/crates/l/csv-nose.svg)
+![License: AGPL-3.0-or-later](https://img.shields.io/crates/l/csv-nose.svg)
 [![DOI](https://zenodo.org/badge/1137017320.svg)](https://doi.org/10.5281/zenodo.18303093)
 
 # csv-nose
@@ -270,7 +270,9 @@ cargo test --test benchmark_accuracy -- --include-ignored --nocapture
 
 ## License
 
-MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/licenses/MIT>)
+Copyright (c) 2026 datHere, Inc.
+
+Licensed under the GNU Affero General Public License v3.0 or later ([LICENSE](LICENSE) or <https://www.gnu.org/licenses/agpl-3.0.html>).
 
 
 ## Naming
